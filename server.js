@@ -7,7 +7,7 @@ app.use(express.json());
 app.use(cors());
 
 // 🔥 paste your MongoDB URL
-mongoose.connect("mongodb+srv://dhanush:Dhanush@123@cluster0.6tvlzu2.mongodb.net/?appName=Cluster0");
+mongoose.connect("mongodb+srv://dhanush:Dhanush@cluster0.6tvlzu2.mongodb.net/?appName=Cluster0");
 
 const energySchema = new mongoose.Schema({
   device_id: String,
