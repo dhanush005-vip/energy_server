@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Energy Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <style>
+    body {
+      font-family: Arial;
+      background: #0f172a;
+      color: white;
+      text-align: center;
+    }
+
+    h1 {
+      color: #38bdf8;
+    }
+
+    .card {
+      background: #1e293b;
+      padding: 20px;
+      margin: 15px;
+      border-radius: 15px;
+      display: inline-block;
+      width: 200px;
+      box-shadow: 0 0 10px #000;
+    }
+
+    .value {
+      font-size: 22px;
+      color: #22c55e;
+    }
+  </style>
+</head>
+
+<body>
+
+<h1>⚡ Smart Energy Dashboard</h1>
+
+<div class="card">
+  <h3>Hall</h3>
+  <div class="value" id="hall">0</div>
+</div>
+
+<div class="card">
+  <h3>Room</h3>
+  <div class="value" id="room">0</div>
+</div>
+
+<div class="card">
+  <h3>Bathroom</h3>
+  <div class="value" id="bath">0</div>
+</div>
+
+<div class="card">
+  <h3>Kitchen</h3>
+  <div class="value" id="kitchen">0</div>
+</div>
+
+<div class="card">
+  <h3>Total Energy (Wh)</h3>
+  <div class="value" id="total">0</div>
+</div>
+
+<div class="card">
+  <h3>Bill Amount (₹)</h3>
+  <div class="value" id="bill">0</div>
+</div>
+
+<script>
+
+const API_URL = "https://energy-server.onrender.com/get-energy/esp32_01";
+
+async function fetchData() {
+  try {
+    const res = await fetch(API_URL);
+    const data = await res.json();
+
+    console.log("API DATA:", data); // 🔥 ADD THIS
+
+    if (!data || Object.keys(data).length === 0) {
+      console.log("No data found");
+      return;
+    }
+
+    document.getElementById("hall").innerText = data.hall ?? 0;
+    document.getElementById("room").innerText = data.room ?? 0;
+    document.getElementById("bath").innerText = data.bath ?? 0;
+    document.getElementById("kitchen").innerText = data.kitchen ?? 0;
+
+    document.getElementById("total").innerText = data.total_energy ?? 0;
+    document.getElementById("bill").innerText = data.bill_amount ?? 0;
+
+  } catch (err) {
+    console.log("Error fetching:", err);
+  }
+}
+
+setInterval(fetchData, 5000);
+fetchData();
+
+
+
+</script>
+
+</body>
+</html>
