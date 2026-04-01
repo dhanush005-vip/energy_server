@@ -26,9 +26,9 @@ const Energy = mongoose.model("Energy", energySchema);
 function calculateBill(units) {
     let bill = 0;
 
-    if (units <= 100) bill = units*2.25;
+    if (units <= 100) bill = (units*2.25);
     else if (units <= 200)
-        bill = (units - 100) * 4.5;
+        bill = (units  * 4.5);
     else if (units <= 400)
         bill = (100 * 2.25) + (units - 200) * 4.5;
     else if (units <= 500)
