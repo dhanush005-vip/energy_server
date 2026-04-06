@@ -593,81 +593,60 @@
 
 <script>
   const DEVICE_ID = "esp32_01";
-  const DASH_API = `https://energy-server.onrender.com/dashboard/${DEVICE_ID}`;
-  const PRED_API = `https://energy-server.onrender.com/predict/${DEVICE_ID}`;
+  const BASE      = `https://energy-server.onrender.com`;
+  const LIVE_API  = `${BASE}/get-energy/${DEVICE_ID}`;
+  const PRED_API  = `${BASE}/predict/${DEVICE_ID}`;
 
-  const ROOM_COLORS = {
-    hall:    '#4fa8ff',
-    room:    '#63e6be',
-    bath:    '#ffd43b',
-    kitchen: '#ff8787',
-  };
 
-  // --- CHART SETUP ---
+
+  // Client-side fallback bill calc (matches server slabs)
+   function calcBill(kwh) {
+  kwh = kwh || 0;
+  if (kwh <= 0) return 0;
+  if (kwh <= 100) return Math.round(kwh * 2.25 * 100) / 100;
+  if (kwh <= 400) return Math.round(((100 * 2.25) + (kwh - 100) * 4.45) * 100) / 100;
+  return Math.round(((100 * 2.25) + (300 * 4.45) + (kwh - 400) * 6.00) * 100) / 100;
+}
+
+  // ── Chart setup ──────────────────────────────────────────────────────────
   let lineChart, donutChart;
 
   function initCharts() {
     const ctx = document.getElementById('chart').getContext('2d');
     lineChart = new Chart(ctx, {
       type: 'line',
-      data: {
-        labels: [],
-        datasets: [{
-          label: 'Total Energy',
-          data: [],
-          borderColor: '#4fa8ff',
-          backgroundColor: (ctx) => {
-            const g = ctx.chart.ctx.createLinearGradient(0, 0, 0, 220);
-            g.addColorStop(0, 'rgba(79,168,255,0.18)');
-            g.addColorStop(1, 'rgba(79,168,255,0.00)');
-            return g;
-          },
-          borderWidth: 2,
-          fill: true,
-          tension: 0.45,
-          pointRadius: 0,
-          pointHoverRadius: 5,
-          pointHoverBackgroundColor: '#4fa8ff',
-          pointHoverBorderColor: '#09090f',
-          pointHoverBorderWidth: 2,
-        }]
-      },
+      data: { labels: [], datasets: [{
+        label: 'Total Energy (Wh)',
+        data: [],
+        borderColor: '#4fa8ff',
+        backgroundColor: (ctx) => {
+          const g = ctx.chart.ctx.createLinearGradient(0, 0, 0, 220);
+          g.addColorStop(0, 'rgba(79,168,255,0.18)');
+          g.addColorStop(1, 'rgba(79,168,255,0.00)');
+          return g;
+        },
+        borderWidth: 2, fill: true, tension: 0.45,
+        pointRadius: 0, pointHoverRadius: 5,
+        pointHoverBackgroundColor: '#4fa8ff',
+        pointHoverBorderColor: '#09090f', pointHoverBorderWidth: 2,
+      }]},
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
+        responsive: true, maintainAspectRatio: false,
         interaction: { intersect: false, mode: 'index' },
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: '#18181f',
-            borderColor: 'rgba(255,255,255,0.08)',
-            borderWidth: 1,
-            titleColor: '#7a7a90',
-            bodyColor: '#f0f0f8',
-            padding: 10,
-            cornerRadius: 8,
-            callbacks: {
-              label: ctx => ` ${ctx.parsed.y} kWh`
-            }
+            backgroundColor: '#18181f', borderColor: 'rgba(255,255,255,0.08)',
+            borderWidth: 1, titleColor: '#7a7a90', bodyColor: '#f0f0f8',
+            padding: 10, cornerRadius: 8,
+            callbacks: { label: ctx => ` ${parseFloat(ctx.parsed.y).toFixed(4)} Wh` }
           }
         },
         scales: {
-          x: {
-            grid: { color: 'rgba(255,255,255,0.04)' },
-            ticks: {
-              color: '#7a7a90', font: { size: 10, family: "'DM Mono', monospace" },
-              maxTicksLimit: 6
-            },
-            border: { color: 'rgba(255,255,255,0.06)' }
-          },
-          y: {
-            grid: { color: 'rgba(255,255,255,0.04)' },
-            ticks: {
-              color: '#7a7a90', font: { size: 10, family: "'DM Mono', monospace" },
-              maxTicksLimit: 5
-            },
-            border: { color: 'rgba(255,255,255,0.06)' }
-          }
+          x: { grid: { color: 'rgba(255,255,255,0.04)' }, border: { color: 'rgba(255,255,255,0.06)' },
+               ticks: { color: '#7a7a90', font: { size: 10, family: "'DM Mono',monospace" }, maxTicksLimit: 6 } },
+          y: { grid: { color: 'rgba(255,255,255,0.04)' }, border: { color: 'rgba(255,255,255,0.06)' },
+               ticks: { color: '#7a7a90', font: { size: 10, family: "'DM Mono',monospace" }, maxTicksLimit: 5 } }
         }
       }
     });
@@ -677,162 +656,89 @@
       type: 'doughnut',
       data: {
         labels: ['Hall', 'Room', 'Bath', 'Kitchen'],
-        datasets: [{
-          data: [1, 1, 1, 1],
-          backgroundColor: ['#4fa8ff', '#63e6be', '#ffd43b', '#ff8787'],
-          borderColor: '#111118',
-          borderWidth: 3,
-          hoverBorderColor: '#111118',
-          hoverOffset: 4,
-        }]
+        datasets: [{ data: [1,1,1,1],
+          backgroundColor: ['#4fa8ff','#63e6be','#ffd43b','#ff8787'],
+          borderColor: '#111118', borderWidth: 3,
+          hoverBorderColor: '#111118', hoverOffset: 4 }]
       },
-      options: {
-        responsive: false,
-        cutout: '68%',
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            backgroundColor: '#18181f',
-            borderColor: 'rgba(255,255,255,0.08)',
-            borderWidth: 1,
-            titleColor: '#7a7a90',
-            bodyColor: '#f0f0f8',
-            padding: 10,
-            cornerRadius: 8,
-          }
+      options: { responsive: false, cutout: '68%',
+        plugins: { legend: { display: false },
+          tooltip: { backgroundColor: '#18181f', borderColor: 'rgba(255,255,255,0.08)',
+            borderWidth: 1, titleColor: '#7a7a90', bodyColor: '#f0f0f8', padding: 10, cornerRadius: 8 }
         }
       }
     });
   }
 
-  // --- DATA LOADERS ---
-  async function loadDashboard() {
-    try {
-      const res = await fetch(DASH_API);
-      const data = await res.json();
-      if (!data.live) return;
-      const l = data.live;
+  // ── Render helpers ───────────────────────────────────────────────────────
+  const ROOM_DEFS = [
+    { name: 'Hall',    key: 'hall',    color: '#4fa8ff' },
+    { name: 'Room',    key: 'room',    color: '#63e6be' },
+    { name: 'Bath',    key: 'bath',    color: '#ffd43b' },
+    { name: 'Kitchen', key: 'kitchen', color: '#ff8787' },
+  ];
 
-      const vals = {
-        hall: parseFloat(l.hall || 0),
-        room: parseFloat(l.room || 0),
-        bath: parseFloat(l.bath || 0),
-        kitchen: parseFloat(l.kitchen || 0),
-      };
-      const total = parseFloat(l.total_energy || 0);
-      const maxRoom = Math.max(...Object.values(vals), 1);
-
-      ['hall','room','bath','kitchen'].forEach(r => {
-        document.getElementById(r).textContent = vals[r].toFixed(4);
-        document.getElementById(`bar-${r}`).style.width = Math.min(100, (vals[r] / maxRoom) * 100) + '%';
-      });
-
-      document.getElementById('total').textContent = total.toFixed(4);
-      document.getElementById('bill').textContent = parseFloat(l.bill_amount || 0).toFixed(2);
-      document.getElementById('bar-total').style.width = Math.min(100, (total / 20) * 100) + '%';
-      document.getElementById('bar-bill').style.width = Math.min(100, ((l.bill_amount || 0) / 500) * 100) + '%';
-
-      document.getElementById('last-update').textContent = 'Updated ' + new Date().toLocaleTimeString();
-
-      // Line chart
-      const history = (data.history || []).slice().reverse();
-      lineChart.data.labels = history.map(h => new Date(h.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }));
-      lineChart.data.datasets[0].data = history.map(h => h.total_energy);
-      lineChart.update('none');
-
-      // Donut
-      donutChart.data.datasets[0].data = [vals.hall, vals.room, vals.bath, vals.kitchen];
-      donutChart.update('none');
-
-      // Breakdown list
-      const sumAll = Object.values(vals).reduce((a, b) => a + b, 0) || 1;
-      const rooms = [
-        { name: 'Hall', key: 'hall', color: '#4fa8ff' },
-        { name: 'Room', key: 'room', color: '#63e6be' },
-        { name: 'Bath', key: 'bath', color: '#ffd43b' },
-        { name: 'Kitchen', key: 'kitchen', color: '#ff8787' },
-      ];
-      document.getElementById('breakdown-list').innerHTML = rooms.map(r => {
-        const pct = Math.round((vals[r.key] / sumAll) * 100);
-        return `
-          <div class="breakdown-row">
-            <div class="room-dot" style="background:${r.color}"></div>
-            <div class="room-name">${r.name}</div>
-            <div class="room-bar-track">
-              <div class="room-bar-fill" style="width:${pct}%;background:${r.color}"></div>
-            </div>
-            <div class="room-pct">${pct}%</div>
-          </div>
-        `;
-      }).join('');
-
-    } catch (e) {
-      document.getElementById('last-update').textContent = 'Connection error';
-    }
-  }
-
-  async function loadPrediction() {
-    try {
-      const res = await fetch(PRED_API);
-      const data = await res.json();
-
-      document.getElementById('bill7').textContent = data.predicted_bill_7_days != null ? parseFloat(data.predicted_bill_7_days).toFixed(2) : '—';
-      document.getElementById('bill30').textContent = data.predicted_bill_30_days != null ? parseFloat(data.predicted_bill_30_days).toFixed(2) : '—';
-      document.getElementById('high').textContent = data.high_usage_area || '—';
-      document.getElementById('suggestion').textContent = data.suggestion || 'No suggestion available.';
-
-      const trend = (data.trend || '').toLowerCase();
-      const chip = document.getElementById('trend-chip');
-      const badge = document.getElementById('trend-badge');
-
-      if (trend.includes('up') || trend.includes('increas') || trend.includes('high')) {
-        chip.className = 'trend-chip trend-up';
-        chip.textContent = '↑ ' + (data.trend || 'Rising');
-        badge.className = 'badge badge-red';
-        badge.textContent = 'Rising';
-      } else if (trend.includes('down') || trend.includes('decreas') || trend.includes('low')) {
-        chip.className = 'trend-chip trend-down';
-        chip.textContent = '↓ ' + (data.trend || 'Falling');
-        badge.className = 'badge badge-green';
-        badge.textContent = 'Falling';
-      } else {
-        chip.className = 'trend-chip trend-stable';
-        chip.textContent = '— ' + (data.trend || 'Stable');
-        badge.className = 'badge badge-yellow';
-        badge.textContent = 'Stable';
-      }
-
-    } catch (e) {
-      document.getElementById('suggestion').textContent = 'Unable to load AI prediction.';
-    }
-  }
-
-  // --- SIMULATE DATA (if server unavailable) ---
-  function simulateLive() {
-    const rooms = ['hall','room','bath','kitchen'];
-    const vals = rooms.reduce((acc, r) => {
-      acc[r] = parseFloat((Math.random() * 0.6 + 0.1).toFixed(4));
-      return acc;
-    }, {});
-    const total = parseFloat((Object.values(vals).reduce((a,b)=>a+b,0)).toFixed(4));
-    const bill = (total * 8.5).toFixed(2);
-
-    const maxRoom = Math.max(...Object.values(vals), 1);
-    rooms.forEach(r => {
-      document.getElementById(r).textContent = vals[r].toFixed(4);
-      document.getElementById(`bar-${r}`).style.width = Math.min(100, (vals[r]/maxRoom)*100) + '%';
+  function renderMetrics(vals, total, bill) {
+    const maxRoom = Math.max(...Object.values(vals), 0.0001);
+    ROOM_DEFS.forEach(r => {
+      document.getElementById(r.key).textContent           = vals[r.key].toFixed(4);
+      document.getElementById(`bar-${r.key}`).style.width  = Math.min(100, (vals[r.key] / maxRoom) * 100) + '%';
     });
-    document.getElementById('total').textContent = total.toFixed(4);
-    document.getElementById('bill').textContent = bill;
-    document.getElementById('bar-total').style.width = Math.min(100, (parseFloat(total)/20)*100) + '%';
-    document.getElementById('bar-bill').style.width = Math.min(100, (bill/500)*100) + '%';
-    document.getElementById('last-update').textContent = 'Simulated · ' + new Date().toLocaleTimeString();
+    document.getElementById('total').textContent          = total.toFixed(4);
+    document.getElementById('bill').textContent           = bill.toFixed(2);
+    document.getElementById('bar-total').style.width      = Math.min(100, (total / 10000) * 100) + '%';  // scale: 10 kWh max
+    document.getElementById('bar-bill').style.width       = Math.min(100, (bill / 2000) * 100) + '%';    // scale: ₹2000 max
+  }
 
-    // Line chart
-    const now = new Date();
-    lineChart.data.labels.push(now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}));
-    lineChart.data.datasets[0].data.push(parseFloat(total));
-    if (lineChart.data.labels.length > 20) {
+  function renderBreakdown(vals) {
+    const sumAll = Object.values(vals).reduce((a, b) => a + b, 0) || 1;
+    document.getElementById('breakdown-list').innerHTML = ROOM_DEFS.map(r => {
+      const pct = Math.round((vals[r.key] / sumAll) * 100);
+      return `<div class="breakdown-row">
+        <div class="room-dot" style="background:${r.color}"></div>
+        <div class="room-name">${r.name}</div>
+        <div class="room-bar-track">
+          <div class="room-bar-fill" style="width:${pct}%;background:${r.color}"></div>
+        </div>
+        <div class="room-pct">${pct}%</div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Dashboard loader ─────────────────────────────────────────────────────
+  async function loadDashboard() {
+    const res = await fetch(LIVE_API);
+    if (!res.ok) throw new Error(`/get-energy returned HTTP ${res.status}`);
+    const l = await res.json();
+    console.log('[get-energy]', l);
+
+    if (!l || Object.keys(l).length === 0) {
+      document.getElementById('last-update').textContent = 'No data yet — waiting for ESP32…';
+      return;
+    }
+
+    const vals = {
+      hall:    parseFloat(l.hall    || 0),
+      room:    parseFloat(l.room    || 0),
+      bath:    parseFloat(l.bath    || 0),
+      kitchen: parseFloat(l.kitchen || 0),
+    };
+    const total = parseFloat(l.total_energy || 0);
+
+    // Server field is "estimated_bill". Fall back to client-side calc if missing.
+    const bill = (l.estimated_bill != null)
+      ? parseFloat(l.estimated_bill)
+      : calcBill(total);
+
+    renderMetrics(vals, total, bill);
+    renderBreakdown(vals);
+    document.getElementById('last-update').textContent = 'Updated ' + new Date().toLocaleTimeString();
+
+    // Push latest reading into the rolling line chart (max 30 points)
+    const label = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    lineChart.data.labels.push(label);
+    lineChart.data.datasets[0].data.push(total);
+    if (lineChart.data.labels.length > 30) {
       lineChart.data.labels.shift();
       lineChart.data.datasets[0].data.shift();
     }
@@ -840,51 +746,67 @@
 
     donutChart.data.datasets[0].data = [vals.hall, vals.room, vals.bath, vals.kitchen];
     donutChart.update('none');
-
-    const sumAll = Object.values(vals).reduce((a,b)=>a+b,0) || 1;
-    const roomDefs = [
-      { name: 'Hall', key: 'hall', color: '#4fa8ff' },
-      { name: 'Room', key: 'room', color: '#63e6be' },
-      { name: 'Bath', key: 'bath', color: '#ffd43b' },
-      { name: 'Kitchen', key: 'kitchen', color: '#ff8787' },
-    ];
-    document.getElementById('breakdown-list').innerHTML = roomDefs.map(r => {
-      const pct = Math.round((vals[r.key] / sumAll) * 100);
-      return `
-        <div class="breakdown-row">
-          <div class="room-dot" style="background:${r.color}"></div>
-          <div class="room-name">${r.name}</div>
-          <div class="room-bar-track">
-            <div class="room-bar-fill" style="width:${pct}%;background:${r.color}"></div>
-          </div>
-          <div class="room-pct">${pct}%</div>
-        </div>
-      `;
-    }).join('');
-
-    document.getElementById('bill7').textContent = (parseFloat(bill) * 7 * 0.9).toFixed(2);
-    document.getElementById('bill30').textContent = (parseFloat(bill) * 30 * 0.85).toFixed(2);
-    document.getElementById('high').textContent = rooms.reduce((a,b) => vals[a]>vals[b]?a:b);
-    document.getElementById('suggestion').textContent = 'Consider shifting high-load appliances to off-peak hours (10 PM – 6 AM) to reduce your monthly bill by up to 18%.';
-    const chip = document.getElementById('trend-chip');
-    chip.className = 'trend-chip trend-stable';
-    chip.textContent = '— Stable';
-    document.getElementById('trend-badge').className = 'badge badge-yellow';
-    document.getElementById('trend-badge').textContent = 'Stable';
   }
 
-  // --- INIT ---
+  // ── Prediction loader ────────────────────────────────────────────────────
+  async function loadPrediction() {
+    const res  = await fetch(PRED_API);
+    if (!res.ok) throw new Error(`/predict returned HTTP ${res.status}`);
+    const data = await res.json();
+    console.log('[predict]', data);
+
+    if (data.message || data.error) {
+      document.getElementById('bill7').textContent      = '—';
+      document.getElementById('bill30').textContent     = '—';
+      document.getElementById('suggestion').textContent = data.message || data.error;
+      return;
+    }
+
+    // Server now sends: predicted_bill_7_days, predicted_bill_30_days,
+    //                   trend, high_usage_area, suggestion
+    document.getElementById('bill7').textContent  = parseFloat(data.predicted_bill_7_days  || 0).toFixed(2);
+    document.getElementById('bill30').textContent = parseFloat(data.predicted_bill_30_days || 0).toFixed(2);
+    document.getElementById('high').textContent      = data.high_usage_area || '—';
+    document.getElementById('suggestion').textContent = data.suggestion     || 'No suggestion available.';
+
+    const trend = (data.trend || '').toLowerCase();
+    const chip  = document.getElementById('trend-chip');
+    const badge = document.getElementById('trend-badge');
+
+    if (trend.includes('increas')) {
+      chip.className = 'trend-chip trend-up';     chip.textContent  = '↑ Rising';
+      badge.className = 'badge badge-red';        badge.textContent = 'Rising';
+    } else if (trend.includes('decreas')) {
+      chip.className = 'trend-chip trend-down';   chip.textContent  = '↓ Falling';
+      badge.className = 'badge badge-green';      badge.textContent = 'Falling';
+    } else {
+      chip.className = 'trend-chip trend-stable'; chip.textContent  = '— Stable';
+      badge.className = 'badge badge-yellow';     badge.textContent = 'Stable';
+    }
+  }
+
+  // ── Status dot helpers ───────────────────────────────────────────────────
+  function showError(msg) {
+    const dot = document.querySelector('.dot');
+    if (dot) { dot.style.background = 'var(--warn)'; dot.style.boxShadow = '0 0 0 3px rgba(255,107,107,0.2)'; dot.style.animation = 'none'; }
+    document.getElementById('last-update').textContent = msg;
+  }
+  function showConnected() {
+    const dot = document.querySelector('.dot');
+    if (dot) { dot.style.background = ''; dot.style.boxShadow = ''; dot.style.animation = ''; }
+  }
+
+  // ── Init & refresh loop ──────────────────────────────────────────────────
   initCharts();
 
-  // Try real API, fall back to simulation
   async function refresh() {
     try {
-      const test = await fetch(DASH_API, { signal: AbortSignal.timeout(4000) });
-      if (!test.ok) throw new Error();
       await loadDashboard();
       await loadPrediction();
-    } catch {
-      simulateLive();
+      showConnected();
+    } catch (e) {
+      console.error('[Refresh error]', e);
+      showError('Server unreachable — retrying…');
     }
   }
 
