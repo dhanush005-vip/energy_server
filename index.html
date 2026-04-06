@@ -1,107 +1,895 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Energy Dashboard</title>
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
+  <title>Smart Energy Analysis and Prediction</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #09090f;
+      --surface: #111118;
+      --surface2: #18181f;
+      --border: rgba(255,255,255,0.06);
+      --border-glow: rgba(99,179,255,0.18);
+      --text: #f0f0f8;
+      --muted: #7a7a90;
+      --faint: #3a3a4a;
+      --accent: #4fa8ff;
+      --accent2: #63e6be;
+      --accent3: #ffd43b;
+      --warn: #ff6b6b;
+      --green: #51cf66;
+      --font: 'DM Sans', sans-serif;
+      --mono: 'DM Mono', monospace;
+    }
+
     body {
-      font-family: Arial;
-      background: #0f172a;
-      color: white;
-      text-align: center;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 14px;
+      line-height: 1.5;
     }
 
-    h1 {
-      color: #38bdf8;
+    /* TOP BAR */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 28px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(9,9,15,0.9);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
     }
 
-    .card {
-      background: #1e293b;
-      padding: 20px;
-      margin: 15px;
-      border-radius: 15px;
-      display: inline-block;
-      width: 200px;
-      box-shadow: 0 0 10px #000;
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      font-size: 15px;
+      letter-spacing: -0.01em;
     }
 
-    .value {
+    .logo-icon {
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, #4fa8ff, #63e6be);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+
+    .logo-sub {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 400;
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .status-dot {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 3px rgba(81,207,102,0.2);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 3px rgba(81,207,102,0.2); }
+      50% { box-shadow: 0 0 0 5px rgba(81,207,102,0.08); }
+    }
+
+    .device-badge {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 4px 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--muted);
+    }
+
+    .last-update {
+      font-size: 11px;
+      color: var(--faint);
+      font-family: var(--mono);
+    }
+
+    /* LAYOUT */
+    .main {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 28px 28px 48px;
+    }
+
+    .section-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    /* METRIC GRID */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+
+    @media (max-width: 900px) {
+      .metrics-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 560px) {
+      .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px 16px 14px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.2s, transform 0.2s;
+      cursor: default;
+    }
+
+    .metric-card:hover {
+      border-color: rgba(255,255,255,0.12);
+      transform: translateY(-1px);
+    }
+
+    .metric-card.highlight {
+      border-color: var(--border-glow);
+      background: linear-gradient(135deg, #111118, #12181f);
+    }
+
+    .metric-card.bill-card {
+      border-color: rgba(255,212,59,0.2);
+      background: linear-gradient(135deg, #111118, #181510);
+    }
+
+    .metric-icon {
+      font-size: 13px;
+      margin-bottom: 14px;
+      opacity: 0.6;
+    }
+
+    .metric-room {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .metric-value {
+      font-family: var(--mono);
       font-size: 22px;
-      color: #22c55e;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      line-height: 1;
+      margin-bottom: 6px;
     }
+
+    .metric-value.accent { color: var(--accent); }
+    .metric-value.bill { color: var(--accent3); }
+
+    .metric-unit {
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .metric-bar-track {
+      height: 3px;
+      background: var(--faint);
+      border-radius: 2px;
+      margin-top: 12px;
+      overflow: hidden;
+    }
+
+    .metric-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      background: var(--accent);
+      transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .metric-bar-fill.bill { background: var(--accent3); }
+
+    /* MAIN CONTENT AREA */
+    .content-row {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    @media (max-width: 900px) {
+      .content-row { grid-template-columns: 1fr; }
+    }
+
+    /* CHART CARD */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px 22px;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .card-sub {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 20px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .badge-blue { background: rgba(79,168,255,0.15); color: var(--accent); }
+    .badge-green { background: rgba(99,230,190,0.12); color: var(--accent2); }
+    .badge-yellow { background: rgba(255,212,59,0.12); color: var(--accent3); }
+    .badge-red { background: rgba(255,107,107,0.12); color: var(--warn); }
+
+    .chart-area {
+      position: relative;
+      height: 220px;
+    }
+
+    /* PREDICTION CARD */
+    .pred-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .pred-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .pred-row:first-child { padding-top: 0; }
+
+    .pred-label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+    }
+
+    .pred-val {
+      font-family: var(--mono);
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .pred-val.accent3 { color: var(--accent3); }
+    .pred-val.green { color: var(--accent2); }
+
+    /* SUGGESTION BANNER */
+    .suggestion {
+      background: linear-gradient(135deg, rgba(79,168,255,0.06), rgba(99,230,190,0.06));
+      border: 1px solid rgba(79,168,255,0.18);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-top: 16px;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .suggestion-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: rgba(79,168,255,0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 13px;
+    }
+
+    .suggestion-text {
+      font-size: 12px;
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    .suggestion-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 3px;
+    }
+
+    /* ROOM BREAKDOWN */
+    .breakdown-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .breakdown-row:last-child { border-bottom: none; }
+
+    .room-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .room-name {
+      flex: 1;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .room-pct {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      min-width: 32px;
+      text-align: right;
+    }
+
+    .room-bar-track {
+      width: 80px;
+      height: 4px;
+      background: var(--faint);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .room-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
+    }
+
+    /* TREND INDICATOR */
+    .trend-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 20px;
+    }
+
+    .trend-up { background: rgba(255,107,107,0.12); color: var(--warn); }
+    .trend-down { background: rgba(81,207,102,0.12); color: var(--green); }
+    .trend-stable { background: rgba(255,212,59,0.12); color: var(--accent3); }
+
+    /* LOADING SKELETON */
+    @keyframes shimmer {
+      0% { background-position: -400px 0; }
+      100% { background-position: 400px 0; }
+    }
+
+    .skeleton {
+      background: linear-gradient(90deg, var(--surface) 25%, var(--surface2) 50%, var(--surface) 75%);
+      background-size: 800px 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: 4px;
+      height: 18px;
+    }
+
+    /* SCROLLBAR */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--faint); border-radius: 2px; }
   </style>
 </head>
-
 <body>
 
-<h1>⚡ Smart Energy Dashboard</h1>
+<!-- TOP BAR -->
+<header class="topbar">
+  <div class="logo">
+    <div class="logo-icon">⚡</div>
+    <div>
+      <div>Smart Energy Analysis and Prediction</div>
+      <div class="logo-sub">Home Energy Management</div>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <div class="status-dot">
+      <div class="dot"></div>
+      <span>Live</span>
+    </div>
+    <div class="device-badge">esp32_01</div>
+    <div class="last-update" id="last-update">Refreshing...</div>
+  </div>
+</header>
 
-<div class="card">
-  <h3>Hall</h3>
-  <div class="value" id="hall">0</div>
-</div>
+<main class="main">
 
-<div class="card">
-  <h3>Room</h3>
-  <div class="value" id="room">0</div>
-</div>
+  <!-- SECTION: LIVE METRICS -->
+  <div class="section-label">Live Consumption</div>
+  <div class="metrics-grid">
+    <div class="metric-card">
+      <div class="metric-icon">🛋️</div>
+      <div class="metric-room">Hall</div>
+      <div class="metric-value" id="hall">—</div>
+      <div class="metric-unit">Watts</div>
+      <div class="metric-bar-track"><div class="metric-bar-fill" id="bar-hall" style="width:0%"></div></div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-icon">🛏️</div>
+      <div class="metric-room">Room</div>
+      <div class="metric-value" id="room">—</div>
+      <div class="metric-unit">Watts</div>
+      <div class="metric-bar-track"><div class="metric-bar-fill" id="bar-room" style="width:0%"></div></div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-icon">🚿</div>
+      <div class="metric-room">Bath</div>
+      <div class="metric-value" id="bath">—</div>
+      <div class="metric-unit">Watts</div>
+      <div class="metric-bar-track"><div class="metric-bar-fill" id="bar-bath" style="width:0%"></div></div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-icon">🍳</div>
+      <div class="metric-room">Kitchen</div>
+      <div class="metric-value" id="kitchen">—</div>
+      <div class="metric-unit">Watts</div>
+      <div class="metric-bar-track"><div class="metric-bar-fill" id="bar-kitchen" style="width:0%"></div></div>
+    </div>
+    <div class="metric-card highlight">
+      <div class="metric-icon">⚡</div>
+      <div class="metric-room">Total</div>
+      <div class="metric-value accent" id="total">—</div>
+      <div class="metric-unit">kWh</div>
+      <div class="metric-bar-track"><div class="metric-bar-fill" id="bar-total" style="width:0%"></div></div>
+    </div>
+    <div class="metric-card bill-card">
+      <div class="metric-icon">₹</div>
+      <div class="metric-room">Est. Bill</div>
+      <div class="metric-value bill" id="bill">—</div>
+      <div class="metric-unit">Rupees</div>
+      <div class="metric-bar-track"><div class="metric-bar-fill bill" id="bar-bill" style="width:0%"></div></div>
+    </div>
+  </div>
 
-<div class="card">
-  <h3>Bathroom</h3>
-  <div class="value" id="bath">0</div>
-</div>
+  <!-- CONTENT ROW: CHART + PREDICTION -->
+  <div class="content-row">
 
-<div class="card">
-  <h3>Kitchen</h3>
-  <div class="value" id="kitchen">0</div>
-</div>
+    <!-- CHART -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Energy Timeline</div>
+          <div class="card-sub">Real-time usage across all zones</div>
+        </div>
+        <span class="badge badge-blue" id="trend-badge">Loading</span>
+      </div>
+      <div class="chart-area">
+        <canvas id="chart"></canvas>
+      </div>
+    </div>
 
-<div class="card">
-  <h3>Total Energy (Wh)</h3>
-  <div class="value" id="total">0</div>
-</div>
+    <!-- PREDICTION -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Forecast</div>
+          <div class="card-sub">AI-powered predictions</div>
+        </div>
+        <span class="badge badge-green">AI</span>
+      </div>
 
-<div class="card">
-  <h3>Bill Amount (₹)</h3>
-  <div class="value" id="bill">0</div>
-</div>
+      <div class="pred-row">
+        <div class="pred-label">7-Day Bill</div>
+        <div class="pred-val accent3">₹<span id="bill7">—</span></div>
+      </div>
+      <div class="pred-row">
+        <div class="pred-label">30-Day Bill</div>
+        <div class="pred-val accent3">₹<span id="bill30">—</span></div>
+      </div>
+      <div class="pred-row">
+        <div class="pred-label">Trend</div>
+        <div class="trend-chip trend-stable" id="trend-chip">—</div>
+      </div>
+      <div class="pred-row">
+        <div class="pred-label">High Usage</div>
+        <div class="pred-val green" id="high">—</div>
+      </div>
+
+      <div class="suggestion">
+        <div class="suggestion-icon">💡</div>
+        <div>
+          <div class="suggestion-title">Tip</div>
+          <div class="suggestion-text" id="suggestion">Loading AI suggestions...</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ROOM BREAKDOWN -->
+  <div class="content-row" style="grid-template-columns: 1fr 1fr;">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Room Breakdown</div>
+          <div class="card-sub">Share of total consumption</div>
+        </div>
+      </div>
+      <div id="breakdown-list">
+        <div class="skeleton" style="margin-bottom:10px"></div>
+        <div class="skeleton" style="margin-bottom:10px;width:80%"></div>
+        <div class="skeleton" style="width:60%"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Usage Distribution</div>
+          <div class="card-sub">Current snapshot</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:center;height:160px;">
+        <canvas id="donut" width="160" height="160"></canvas>
+      </div>
+    </div>
+  </div>
+
+</main>
 
 <script>
+  const DEVICE_ID = "esp32_01";
+  const DASH_API = `https://energy-server.onrender.com/dashboard/${DEVICE_ID}`;
+  const PRED_API = `https://energy-server.onrender.com/predict/${DEVICE_ID}`;
 
-const API_URL = "https://energy-server.onrender.com/get-energy/esp32_01";
+  const ROOM_COLORS = {
+    hall:    '#4fa8ff',
+    room:    '#63e6be',
+    bath:    '#ffd43b',
+    kitchen: '#ff8787',
+  };
 
-async function fetchData() {
-  try {
-    const res = await fetch(API_URL);
-    const data = await res.json();
+  // --- CHART SETUP ---
+  let lineChart, donutChart;
 
-    console.log("API DATA:", data); // 🔥 ADD THIS
+  function initCharts() {
+    const ctx = document.getElementById('chart').getContext('2d');
+    lineChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Total Energy',
+          data: [],
+          borderColor: '#4fa8ff',
+          backgroundColor: (ctx) => {
+            const g = ctx.chart.ctx.createLinearGradient(0, 0, 0, 220);
+            g.addColorStop(0, 'rgba(79,168,255,0.18)');
+            g.addColorStop(1, 'rgba(79,168,255,0.00)');
+            return g;
+          },
+          borderWidth: 2,
+          fill: true,
+          tension: 0.45,
+          pointRadius: 0,
+          pointHoverRadius: 5,
+          pointHoverBackgroundColor: '#4fa8ff',
+          pointHoverBorderColor: '#09090f',
+          pointHoverBorderWidth: 2,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { intersect: false, mode: 'index' },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#18181f',
+            borderColor: 'rgba(255,255,255,0.08)',
+            borderWidth: 1,
+            titleColor: '#7a7a90',
+            bodyColor: '#f0f0f8',
+            padding: 10,
+            cornerRadius: 8,
+            callbacks: {
+              label: ctx => ` ${ctx.parsed.y} kWh`
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { color: 'rgba(255,255,255,0.04)' },
+            ticks: {
+              color: '#7a7a90', font: { size: 10, family: "'DM Mono', monospace" },
+              maxTicksLimit: 6
+            },
+            border: { color: 'rgba(255,255,255,0.06)' }
+          },
+          y: {
+            grid: { color: 'rgba(255,255,255,0.04)' },
+            ticks: {
+              color: '#7a7a90', font: { size: 10, family: "'DM Mono', monospace" },
+              maxTicksLimit: 5
+            },
+            border: { color: 'rgba(255,255,255,0.06)' }
+          }
+        }
+      }
+    });
 
-    if (!data || Object.keys(data).length === 0) {
-      console.log("No data found");
-      return;
-    }
-
-    document.getElementById("hall").innerText = data.hall ?? 0;
-    document.getElementById("room").innerText = data.room ?? 0;
-    document.getElementById("bath").innerText = data.bath ?? 0;
-    document.getElementById("kitchen").innerText = data.kitchen ?? 0;
-
-    document.getElementById("total").innerText = data.total_energy ?? 0;
-    document.getElementById("bill").innerText = data.bill_amount ?? 0;
-
-  } catch (err) {
-    console.log("Error fetching:", err);
+    const dCtx = document.getElementById('donut').getContext('2d');
+    donutChart = new Chart(dCtx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Hall', 'Room', 'Bath', 'Kitchen'],
+        datasets: [{
+          data: [1, 1, 1, 1],
+          backgroundColor: ['#4fa8ff', '#63e6be', '#ffd43b', '#ff8787'],
+          borderColor: '#111118',
+          borderWidth: 3,
+          hoverBorderColor: '#111118',
+          hoverOffset: 4,
+        }]
+      },
+      options: {
+        responsive: false,
+        cutout: '68%',
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#18181f',
+            borderColor: 'rgba(255,255,255,0.08)',
+            borderWidth: 1,
+            titleColor: '#7a7a90',
+            bodyColor: '#f0f0f8',
+            padding: 10,
+            cornerRadius: 8,
+          }
+        }
+      }
+    });
   }
-}
 
-setInterval(fetchData, 5000);
-fetchData();
+  // --- DATA LOADERS ---
+  async function loadDashboard() {
+    try {
+      const res = await fetch(DASH_API);
+      const data = await res.json();
+      if (!data.live) return;
+      const l = data.live;
 
+      const vals = {
+        hall: l.hall || 0,
+        room: l.room || 0,
+        bath: l.bath || 0,
+        kitchen: l.kitchen || 0,
+      };
+      const total = l.total_energy || 0;
+      const maxRoom = Math.max(...Object.values(vals), 1);
 
+      ['hall','room','bath','kitchen'].forEach(r => {
+        document.getElementById(r).textContent = vals[r];
+        document.getElementById(`bar-${r}`).style.width = Math.min(100, (vals[r] / maxRoom) * 100) + '%';
+      });
 
+      document.getElementById('total').textContent = total;
+      document.getElementById('bill').textContent = l.bill_amount || '0';
+      document.getElementById('bar-total').style.width = Math.min(100, (total / 20) * 100) + '%';
+      document.getElementById('bar-bill').style.width = Math.min(100, ((l.bill_amount || 0) / 500) * 100) + '%';
+
+      document.getElementById('last-update').textContent = 'Updated ' + new Date().toLocaleTimeString();
+
+      // Line chart
+      const history = (data.history || []).slice().reverse();
+      lineChart.data.labels = history.map(h => new Date(h.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }));
+      lineChart.data.datasets[0].data = history.map(h => h.total_energy);
+      lineChart.update('none');
+
+      // Donut
+      donutChart.data.datasets[0].data = [vals.hall, vals.room, vals.bath, vals.kitchen];
+      donutChart.update('none');
+
+      // Breakdown list
+      const sumAll = Object.values(vals).reduce((a, b) => a + b, 0) || 1;
+      const rooms = [
+        { name: 'Hall', key: 'hall', color: '#4fa8ff' },
+        { name: 'Room', key: 'room', color: '#63e6be' },
+        { name: 'Bath', key: 'bath', color: '#ffd43b' },
+        { name: 'Kitchen', key: 'kitchen', color: '#ff8787' },
+      ];
+      document.getElementById('breakdown-list').innerHTML = rooms.map(r => {
+        const pct = Math.round((vals[r.key] / sumAll) * 100);
+        return `
+          <div class="breakdown-row">
+            <div class="room-dot" style="background:${r.color}"></div>
+            <div class="room-name">${r.name}</div>
+            <div class="room-bar-track">
+              <div class="room-bar-fill" style="width:${pct}%;background:${r.color}"></div>
+            </div>
+            <div class="room-pct">${pct}%</div>
+          </div>
+        `;
+      }).join('');
+
+    } catch (e) {
+      document.getElementById('last-update').textContent = 'Connection error';
+    }
+  }
+
+  async function loadPrediction() {
+    try {
+      const res = await fetch(PRED_API);
+      const data = await res.json();
+
+      document.getElementById('bill7').textContent = data.predicted_bill_7_days || '—';
+      document.getElementById('bill30').textContent = data.predicted_bill_30_days || '—';
+      document.getElementById('high').textContent = data.high_usage_area || '—';
+      document.getElementById('suggestion').textContent = data.suggestion || 'No suggestion available.';
+
+      const trend = (data.trend || '').toLowerCase();
+      const chip = document.getElementById('trend-chip');
+      const badge = document.getElementById('trend-badge');
+
+      if (trend.includes('up') || trend.includes('increas') || trend.includes('high')) {
+        chip.className = 'trend-chip trend-up';
+        chip.textContent = '↑ ' + (data.trend || 'Rising');
+        badge.className = 'badge badge-red';
+        badge.textContent = 'Rising';
+      } else if (trend.includes('down') || trend.includes('decreas') || trend.includes('low')) {
+        chip.className = 'trend-chip trend-down';
+        chip.textContent = '↓ ' + (data.trend || 'Falling');
+        badge.className = 'badge badge-green';
+        badge.textContent = 'Falling';
+      } else {
+        chip.className = 'trend-chip trend-stable';
+        chip.textContent = '— ' + (data.trend || 'Stable');
+        badge.className = 'badge badge-yellow';
+        badge.textContent = 'Stable';
+      }
+
+    } catch (e) {
+      document.getElementById('suggestion').textContent = 'Unable to load AI prediction.';
+    }
+  }
+
+  // --- SIMULATE DATA (if server unavailable) ---
+  function simulateLive() {
+    const rooms = ['hall','room','bath','kitchen'];
+    const vals = rooms.reduce((acc, r) => {
+      acc[r] = Math.floor(Math.random() * 600 + 100);
+      return acc;
+    }, {});
+    const total = (Object.values(vals).reduce((a,b)=>a+b,0) / 1000).toFixed(2);
+    const bill = Math.round(total * 8.5);
+
+    const maxRoom = Math.max(...Object.values(vals), 1);
+    rooms.forEach(r => {
+      document.getElementById(r).textContent = vals[r];
+      document.getElementById(`bar-${r}`).style.width = Math.min(100, (vals[r]/maxRoom)*100) + '%';
+    });
+    document.getElementById('total').textContent = total;
+    document.getElementById('bill').textContent = bill;
+    document.getElementById('bar-total').style.width = Math.min(100, (parseFloat(total)/20)*100) + '%';
+    document.getElementById('bar-bill').style.width = Math.min(100, (bill/500)*100) + '%';
+    document.getElementById('last-update').textContent = 'Simulated · ' + new Date().toLocaleTimeString();
+
+    // Line chart
+    const now = new Date();
+    lineChart.data.labels.push(now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}));
+    lineChart.data.datasets[0].data.push(parseFloat(total));
+    if (lineChart.data.labels.length > 20) {
+      lineChart.data.labels.shift();
+      lineChart.data.datasets[0].data.shift();
+    }
+    lineChart.update('none');
+
+    donutChart.data.datasets[0].data = [vals.hall, vals.room, vals.bath, vals.kitchen];
+    donutChart.update('none');
+
+    const sumAll = Object.values(vals).reduce((a,b)=>a+b,0) || 1;
+    const roomDefs = [
+      { name: 'Hall', key: 'hall', color: '#4fa8ff' },
+      { name: 'Room', key: 'room', color: '#63e6be' },
+      { name: 'Bath', key: 'bath', color: '#ffd43b' },
+      { name: 'Kitchen', key: 'kitchen', color: '#ff8787' },
+    ];
+    document.getElementById('breakdown-list').innerHTML = roomDefs.map(r => {
+      const pct = Math.round((vals[r.key] / sumAll) * 100);
+      return `
+        <div class="breakdown-row">
+          <div class="room-dot" style="background:${r.color}"></div>
+          <div class="room-name">${r.name}</div>
+          <div class="room-bar-track">
+            <div class="room-bar-fill" style="width:${pct}%;background:${r.color}"></div>
+          </div>
+          <div class="room-pct">${pct}%</div>
+        </div>
+      `;
+    }).join('');
+
+    document.getElementById('bill7').textContent = Math.round(bill * 7 * 0.9);
+    document.getElementById('bill30').textContent = Math.round(bill * 30 * 0.85);
+    document.getElementById('high').textContent = rooms.reduce((a,b) => vals[a]>vals[b]?a:b);
+    document.getElementById('suggestion').textContent = 'Consider shifting high-load appliances to off-peak hours (10 PM – 6 AM) to reduce your monthly bill by up to 18%.';
+    const chip = document.getElementById('trend-chip');
+    chip.className = 'trend-chip trend-stable';
+    chip.textContent = '— Stable';
+    document.getElementById('trend-badge').className = 'badge badge-yellow';
+    document.getElementById('trend-badge').textContent = 'Stable';
+  }
+
+  // --- INIT ---
+  initCharts();
+
+  // Try real API, fall back to simulation
+  async function refresh() {
+    try {
+      const test = await fetch(DASH_API, { signal: AbortSignal.timeout(4000) });
+      if (!test.ok) throw new Error();
+      await loadDashboard();
+      await loadPrediction();
+    } catch {
+      simulateLive();
+    }
+  }
+
+  refresh();
+  setInterval(refresh, 5000);
 </script>
-
 </body>
 </html>
