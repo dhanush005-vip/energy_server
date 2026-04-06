@@ -1,9 +1,8 @@
 const express = require("express");
 const router = express.Router();
-
-// 🔥 IMPORT YOUR HISTORY MODEL
 const mongoose = require("mongoose");
 
+// -------- HISTORY SCHEMA --------
 const HistorySchema = new mongoose.Schema({
   device_id: String,
   hall: Number,
@@ -16,61 +15,62 @@ const HistorySchema = new mongoose.Schema({
 
 const History = mongoose.model("History", HistorySchema);
 
-// 🔮 PREDICTION API
+
+// -------- BILL FUNCTION --------
+function calcBill(units) {
+  let bill = 0;
+
+  if (units <= 100) bill = units * 2.25;
+  else if (units <= 200)
+    bill = (100 * 2.25) + (units - 100) * 4.5;
+  else if (units <= 400)
+    bill = (100 * 2.25) + (100 * 4.5) + (units - 200) * 6;
+  else
+    bill = (100 * 2.25) + (100 * 4.5) + (200 * 6) + (units - 400) * 8;
+
+  return Math.round(bill);
+}
+
+
+// -------- 🔮 PREDICTION API --------
 router.get("/predict/:id", async (req, res) => {
   try {
     const device_id = req.params.id;
 
-    const history = await History.find({ device_id })
-                                 .sort({ timestamp: 1 });
+    // 🔥 ONLY LAST 30 DAYS DATA
+    const history = await History.find({
+      device_id,
+      timestamp: {
+        $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      }
+    }).sort({ timestamp: 1 });
 
+    // ❌ Not enough data
     if (!history || history.length < 2) {
-      return res.json({ message: "Not enough data for prediction" });
+      return res.json({
+        message: "Not enough data for prediction"
+      });
     }
 
     // -------------------------------
-    // 📊 DAILY AVERAGE
+    // ✅ CORRECT METHOD (DIFFERENCE)
     // -------------------------------
-    let totalEnergy = 0;
+    const first = history[0];
+    const last = history[history.length - 1];
 
-    history.forEach(h => {
-      totalEnergy += h.total_energy;
-    });
+    const totalUnits = last.total_energy - first.total_energy;
 
-    const avgEnergy = totalEnergy / history.length;
-    const avgUnits = avgEnergy;
+    const timeDiff = last.timestamp - first.timestamp;
+    const days = timeDiff / (1000 * 60 * 60 * 24);
+    const safeDays = days > 0 ? days : 1;
+
+    const dailyUnits = totalUnits / safeDays;
 
     // -------------------------------
     // 🔮 FUTURE PREDICTION
     // -------------------------------
-    const units7 = avgUnits * 7;
-    const units30 = avgUnits * 30;
-
-    // -------------------------------
-    // 💰 BILL CALCULATION
-    // -------------------------------
-    function calcBill(units) {
-      if (units <= 100) return 0;
-
-      let bill = 0;
-
-      if (units > 100) {
-        let u = Math.min(units - 100, 100);
-        bill += u * 2.25;
-      }
-
-      if (units > 200) {
-        let u = Math.min(units - 200, 200);
-        bill += u * 4.5;
-      }
-
-      if (units > 400) {
-        let u = units - 400;
-        bill += u * 6;
-      }
-
-      return Math.round(bill);
-    }
+    const units7 = dailyUnits * 7;
+    const units30 = dailyUnits * 30;
 
     const bill7 = calcBill(units7);
     const bill30 = calcBill(units30);
@@ -78,16 +78,15 @@ router.get("/predict/:id", async (req, res) => {
     // -------------------------------
     // 📈 TREND
     // -------------------------------
-    const first = history[0].total_energy;
-    const last  = history[history.length - 1].total_energy;
-
     let trend = "Stable";
 
-    if (last > first) trend = "Increasing 📈";
-    else if (last < first) trend = "Decreasing 📉";
+    if (last.total_energy > first.total_energy)
+      trend = "Increasing 📈";
+    else if (last.total_energy < first.total_energy)
+      trend = "Decreasing 📉";
 
     // -------------------------------
-    // ⚡ HIGH USAGE AREA
+    // ⚡ AREA ANALYSIS
     // -------------------------------
     let hall = 0, room = 0, bath = 0, kitchen = 0;
 
@@ -108,39 +107,39 @@ router.get("/predict/:id", async (req, res) => {
     // -------------------------------
     // 💡 SUGGESTION
     // -------------------------------
-    let suggestion = `${maxArea} consumes more energy. Try reducing usage.`;
+    let suggestion = "Optimize energy usage.";
 
-    if (maxArea === "Kitchen") {
-      suggestion = "Kitchen uses high power. Reduce heater/microwave usage.";
-    } else if (maxArea === "Hall") {
-      suggestion = "Hall usage is high. Turn off lights/fans when not needed.";
-    } else if (maxArea === "Room") {
-      suggestion = "Room consumes more energy. Optimize AC/fan usage.";
-    } else if (maxArea === "Bathroom") {
-      suggestion = "Bathroom usage is high. Reduce geyser usage.";
-    }
+    if (maxArea === "Kitchen")
+      suggestion = "Reduce heater / microwave usage.";
+    else if (maxArea === "Hall")
+      suggestion = "Turn off unused lights and fans.";
+    else if (maxArea === "Room")
+      suggestion = "Limit AC usage.";
+    else if (maxArea === "Bathroom")
+      suggestion = "Reduce geyser usage.";
 
     // -------------------------------
     // 📤 RESPONSE
     // -------------------------------
     res.json({
-      avg_daily_energy_wh: avgEnergy,
-      avg_daily_units: avgUnits,
+      daily_units: Number(dailyUnits).toFixed(2),
 
-      prediction_units_7_days: units7,
-      prediction_units_30_days: units30,
+      predicted_units_7_days: Number(units7).toFixed(2),
+      predicted_units_30_days: Number(units30).toFixed(2),
 
       predicted_bill_7_days: bill7,
       predicted_bill_30_days: bill30,
 
-      trend: trend,
+      trend,
       high_usage_area: maxArea,
-      suggestion: suggestion
+      suggestion
     });
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Prediction error" });
+    res.status(500).json({
+      error: "Prediction error"
+    });
   }
 });
 
