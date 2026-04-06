@@ -2,100 +2,87 @@ const express = require("express");
 const router = express.Router();
 const mongoose = require("mongoose");
 
-// -------- HISTORY SCHEMA --------
-const HistorySchema = new mongoose.Schema({
+
+// -------- ENERGY SCHEMA (USE THIS INSTEAD OF HISTORY) --------
+const EnergySchema = new mongoose.Schema({
   device_id: String,
   hall: Number,
   room: Number,
   bath: Number,
   kitchen: Number,
-  total_energy: Number,
-  timestamp: { type: Date, default: Date.now }
+  total_energy: Number,   // Wh
+  updatedAt: { type: Date, default: Date.now }
 });
 
-const History = mongoose.model("History", HistorySchema);
+const Energy = mongoose.model("Energy", EnergySchema);
 
 
 // -------- BILL FUNCTION --------
-function calcBill(units) {
+function calcBill(wh) {
+  const units = wh / 1000; // convert Wh → kWh
+
   let bill = 0;
 
-  if (units <= 100) bill = units * 2.25;
+  if (units <= 100) bill = 0;
   else if (units <= 200)
-    bill = (100 * 2.25) + (units - 100) * 4.5;
-  else if (units <= 400)
-    bill = (100 * 2.25) + (100 * 4.5) + (units - 200) * 6;
+    bill = (units - 100) * 1.5;
+  else if (units <= 500)
+    bill = (100 * 1.5) + (units - 200) * 3;
+  else if (units <= 1000)
+    bill = (100 * 1.5) + (300 * 3) + (units - 500) * 4.5;
   else
-    bill = (100 * 2.25) + (100 * 4.5) + (200 * 6) + (units - 400) * 8;
+    bill = (100 * 1.5) + (300 * 3) + (500 * 4.5) + (units - 1000) * 6;
 
-  return Math.round(bill);
+  if (units > 100) bill += 30;
+
+  return Number(bill.toFixed(2));
 }
 
 
-// -------- 🔮 PREDICTION API --------
+// -------- 🔮 PREDICTION API (ENERGY BASED) --------
 router.get("/predict/:id", async (req, res) => {
   try {
     const device_id = req.params.id;
 
-    // 🔥 ONLY LAST 30 DAYS DATA
-    const history = await History.find({
-      device_id,
-      timestamp: {
-        $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-      }
-    }).sort({ timestamp: 1 });
+    // 🔥 GET CURRENT ENERGY DATA
+    const data = await Energy.findOne({ device_id });
 
-    // ❌ Not enough data
-    if (!history || history.length < 2) {
-      return res.json({
-        message: "Not enough data for prediction"
-      });
+    if (!data) {
+      return res.json({ message: "No data found" });
     }
 
     // -------------------------------
-    // ✅ CORRECT METHOD (DIFFERENCE)
+    // ⏱️ TIME CALCULATION
     // -------------------------------
-    const first = history[0];
-    const last = history[history.length - 1];
+    const now = new Date();
+    const lastUpdate = data.updatedAt || now;
 
-    const totalUnits = last.total_energy - first.total_energy;
+    let diffHours = (now - lastUpdate) / (1000 * 60 * 60);
 
-    const timeDiff = last.timestamp - first.timestamp;
-    const days = timeDiff / (1000 * 60 * 60 * 24);
-    const safeDays = days > 0 ? days : 1;
-
-    const dailyUnits = totalUnits / safeDays;
+    if (diffHours <= 0) diffHours = 1;
 
     // -------------------------------
-    // 🔮 FUTURE PREDICTION
+    // ⚡ USAGE CALCULATION
     // -------------------------------
-    const units7 = dailyUnits * 7;
-    const units30 = dailyUnits * 30;
+    const totalWh = data.total_energy || 0;
 
-    const bill7 = calcBill(units7);
-    const bill30 = calcBill(units30);
-
-    // -------------------------------
-    // 📈 TREND
-    // -------------------------------
-    let trend = "Stable";
-
-    if (last.total_energy > first.total_energy)
-      trend = "Increasing 📈";
-    else if (last.total_energy < first.total_energy)
-      trend = "Decreasing 📉";
+    const whPerHour = totalWh / diffHours;
+    const whPerDay = whPerHour * 24;
+    const wh30Days = whPerDay * 30;
 
     // -------------------------------
-    // ⚡ AREA ANALYSIS
+    // 💰 BILL
     // -------------------------------
-    let hall = 0, room = 0, bath = 0, kitchen = 0;
+    const currentBill = calcBill(totalWh);
+    const predictedBill30 = calcBill(wh30Days);
 
-    history.forEach(h => {
-      hall += h.hall;
-      room += h.room;
-      bath += h.bath;
-      kitchen += h.kitchen;
-    });
+    // -------------------------------
+    // 📊 AREA ANALYSIS
+    // -------------------------------
+    const hall = data.hall || 0;
+    const room = data.room || 0;
+    const bath = data.bath || 0;
+    const kitchen = data.kitchen || 0;
 
     let maxArea = "Hall";
     let maxValue = hall;
@@ -122,17 +109,18 @@ router.get("/predict/:id", async (req, res) => {
     // 📤 RESPONSE
     // -------------------------------
     res.json({
-      daily_units: Number(dailyUnits).toFixed(2),
+      current_units: Number((totalWh / 1000).toFixed(4)),
+      estimated_bill_now: currentBill,
 
-      predicted_units_7_days: Number(units7).toFixed(2),
-      predicted_units_30_days: Number(units30).toFixed(2),
+      usage_rate_per_hour: Number(whPerHour.toFixed(4)),
 
-      predicted_bill_7_days: bill7,
-      predicted_bill_30_days: bill30,
+      predicted_units_30_days: Number((wh30Days / 1000).toFixed(4)),
+      predicted_bill_30_days: predictedBill30,
 
-      trend,
       high_usage_area: maxArea,
-      suggestion
+      suggestion,
+
+      note: "Prediction based on Energy collection only"
     });
 
   } catch (err) {
