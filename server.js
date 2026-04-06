@@ -21,8 +21,6 @@ function round(val, digits = 4) {
 
 
 // -------- SCHEMAS --------
-
-// 🔴 LIVE DATA
 const energySchema = new mongoose.Schema({
     device_id: String,
     hall: { type: Number, default: 0 },
@@ -34,7 +32,6 @@ const energySchema = new mongoose.Schema({
 
 const Energy = mongoose.model("Energy", energySchema);
 
-// 🟢 HISTORY DATA
 const historySchema = new mongoose.Schema({
     device_id: String,
     hall: Number,
@@ -53,8 +50,7 @@ function calculateBill(units) {
     let bill = 0;
 
     if (units <= 100) bill = units * 2.25;
-    else if (units <= 200)
-        bill = units * 4.5;
+    else if (units <= 200) bill = units * 4.5;
     else if (units <= 400)
         bill = (100 * 2.25) + (units - 200) * 4.5;
     else if (units <= 500)
@@ -66,7 +62,7 @@ function calculateBill(units) {
 }
 
 
-// -------- UPDATE API (ESP32) --------
+// -------- UPDATE API (LIVE DATA) --------
 app.post("/update-energy", async (req, res) => {
 
     const { device_id, hall, room, bath, kitchen } = req.body;
@@ -77,24 +73,23 @@ app.post("/update-energy", async (req, res) => {
         data = new Energy({ device_id });
     }
 
-    // ✅ ADD VALUES
-    data.hall += hall;
-    data.room += room;
-    data.bath += bath;
-    data.kitchen += kitchen;
+    // ✅ LIVE VALUES ONLY (NO ADDITION)
+    data.hall = hall;
+    data.room = room;
+    data.bath = bath;
+    data.kitchen = kitchen;
 
-    data.total_energy =
-        data.hall + data.room + data.bath + data.kitchen;
+    data.total_energy = hall + room + bath + kitchen;
 
     await data.save();
 
-    // 🔥 SAVE HISTORY
+    // ✅ SAVE HISTORY SNAPSHOT
     await History.create({
         device_id,
-        hall: data.hall,
-        room: data.room,
-        bath: data.bath,
-        kitchen: data.kitchen,
+        hall,
+        room,
+        bath,
+        kitchen,
         total_energy: data.total_energy
     });
 
@@ -109,7 +104,8 @@ app.get("/get-energy/:id", async (req, res) => {
 
     if (!data) return res.json({});
 
-    const bill = calculateBill(data.total_energy);
+    // 🔥 Multiply for realistic bill (demo fix)
+    const bill = calculateBill(data.total_energy * 10);
 
     res.json({
         hall: round(data.hall),
@@ -122,19 +118,29 @@ app.get("/get-energy/:id", async (req, res) => {
 });
 
 
-// -------- DASHBOARD API --------
+// -------- 🔥 DASHBOARD (MERGED HISTORY + LIVE) --------
 app.get("/dashboard/:id", async (req, res) => {
 
     const device_id = req.params.id;
 
     const current = await Energy.findOne({ device_id });
 
-    const history = await History.find({
-        device_id,
-        timestamp: {
-            $gte: new Date(Date.now() - 30 * 60 * 1000)
-        }
-    }).sort({ timestamp: 1 });
+    let history = await History.find({ device_id })
+        .sort({ timestamp: -1 })
+        .limit(50)
+        .sort({ timestamp: 1 });
+
+    // ✅ ADD LIVE DATA TO HISTORY
+    if (current) {
+        history.push({
+            hall: current.hall,
+            room: current.room,
+            bath: current.bath,
+            kitchen: current.kitchen,
+            total_energy: current.total_energy,
+            timestamp: new Date()
+        });
+    }
 
     res.json({
         live: current,
@@ -143,13 +149,12 @@ app.get("/dashboard/:id", async (req, res) => {
 });
 
 
-// -------- 🔮 PREDICTION API --------
+// -------- 🔮 PREDICTION --------
 app.get("/predict/:id", async (req, res) => {
   try {
     const device_id = req.params.id;
 
-    const history = await History.find({ device_id })
-                                 .sort({ timestamp: 1 });
+    const history = await History.find({ device_id });
 
     if (!history || history.length < 2) {
       return res.json({ message: "Not enough data" });
@@ -159,13 +164,15 @@ app.get("/predict/:id", async (req, res) => {
     history.forEach(h => totalEnergy += h.total_energy);
 
     const avgEnergy = totalEnergy / history.length;
-    const avgUnits = avgEnergy / 1000;
+
+    // ✅ FIXED (NO /1000)
+    const avgUnits = avgEnergy;
 
     const units7 = avgUnits * 7;
     const units30 = avgUnits * 30;
 
-    const bill7 = calculateBill(units7);
-    const bill30 = calculateBill(units30);
+    const bill7 = calculateBill(units7 * 10);
+    const bill30 = calculateBill(units30 * 10);
 
     const first = history[0].total_energy;
     const last  = history[history.length - 1].total_energy;
@@ -195,9 +202,9 @@ app.get("/predict/:id", async (req, res) => {
     if (maxArea === "Kitchen")
       suggestion = "Reduce heater/microwave usage.";
     else if (maxArea === "Hall")
-      suggestion = "Turn off lights/fans when not needed.";
+      suggestion = "Turn off lights/fans.";
     else if (maxArea === "Room")
-      suggestion = "Optimize AC/fan usage.";
+      suggestion = "Optimize AC usage.";
     else if (maxArea === "Bathroom")
       suggestion = "Reduce geyser usage.";
 

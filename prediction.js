@@ -38,7 +38,7 @@ router.get("/predict/:id", async (req, res) => {
     });
 
     const avgEnergy = totalEnergy / history.length;
-    const avgUnits = avgEnergy / 1000;
+    const avgUnits = avgEnergy;
 
     // -------------------------------
     // 🔮 FUTURE PREDICTION

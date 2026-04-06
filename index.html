@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart Energy Analysis and Prediction</title>
+  <title>Smart Energy Pro</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
@@ -442,7 +442,7 @@
   <div class="logo">
     <div class="logo-icon">⚡</div>
     <div>
-      <div>Smart Energy Analysis and Prediction</div>
+      <div>Smart Energy Pro</div>
       <div class="logo-sub">Home Energy Management</div>
     </div>
   </div>
@@ -714,21 +714,21 @@
       const l = data.live;
 
       const vals = {
-        hall: l.hall || 0,
-        room: l.room || 0,
-        bath: l.bath || 0,
-        kitchen: l.kitchen || 0,
+        hall: parseFloat(l.hall || 0),
+        room: parseFloat(l.room || 0),
+        bath: parseFloat(l.bath || 0),
+        kitchen: parseFloat(l.kitchen || 0),
       };
-      const total = l.total_energy || 0;
+      const total = parseFloat(l.total_energy || 0);
       const maxRoom = Math.max(...Object.values(vals), 1);
 
       ['hall','room','bath','kitchen'].forEach(r => {
-        document.getElementById(r).textContent = vals[r];
+        document.getElementById(r).textContent = vals[r].toFixed(4);
         document.getElementById(`bar-${r}`).style.width = Math.min(100, (vals[r] / maxRoom) * 100) + '%';
       });
 
-      document.getElementById('total').textContent = total;
-      document.getElementById('bill').textContent = l.bill_amount || '0';
+      document.getElementById('total').textContent = total.toFixed(4);
+      document.getElementById('bill').textContent = parseFloat(l.bill_amount || 0).toFixed(2);
       document.getElementById('bar-total').style.width = Math.min(100, (total / 20) * 100) + '%';
       document.getElementById('bar-bill').style.width = Math.min(100, ((l.bill_amount || 0) / 500) * 100) + '%';
 
@@ -776,8 +776,8 @@
       const res = await fetch(PRED_API);
       const data = await res.json();
 
-      document.getElementById('bill7').textContent = data.predicted_bill_7_days || '—';
-      document.getElementById('bill30').textContent = data.predicted_bill_30_days || '—';
+      document.getElementById('bill7').textContent = data.predicted_bill_7_days != null ? parseFloat(data.predicted_bill_7_days).toFixed(2) : '—';
+      document.getElementById('bill30').textContent = data.predicted_bill_30_days != null ? parseFloat(data.predicted_bill_30_days).toFixed(2) : '—';
       document.getElementById('high').textContent = data.high_usage_area || '—';
       document.getElementById('suggestion').textContent = data.suggestion || 'No suggestion available.';
 
@@ -811,18 +811,18 @@
   function simulateLive() {
     const rooms = ['hall','room','bath','kitchen'];
     const vals = rooms.reduce((acc, r) => {
-      acc[r] = Math.floor(Math.random() * 600 + 100);
+      acc[r] = parseFloat((Math.random() * 0.6 + 0.1).toFixed(4));
       return acc;
     }, {});
-    const total = (Object.values(vals).reduce((a,b)=>a+b,0) / 1000).toFixed(2);
-    const bill = Math.round(total * 8.5);
+    const total = parseFloat((Object.values(vals).reduce((a,b)=>a+b,0)).toFixed(4));
+    const bill = (total * 8.5).toFixed(2);
 
     const maxRoom = Math.max(...Object.values(vals), 1);
     rooms.forEach(r => {
-      document.getElementById(r).textContent = vals[r];
+      document.getElementById(r).textContent = vals[r].toFixed(4);
       document.getElementById(`bar-${r}`).style.width = Math.min(100, (vals[r]/maxRoom)*100) + '%';
     });
-    document.getElementById('total').textContent = total;
+    document.getElementById('total').textContent = total.toFixed(4);
     document.getElementById('bill').textContent = bill;
     document.getElementById('bar-total').style.width = Math.min(100, (parseFloat(total)/20)*100) + '%';
     document.getElementById('bar-bill').style.width = Math.min(100, (bill/500)*100) + '%';
@@ -862,8 +862,8 @@
       `;
     }).join('');
 
-    document.getElementById('bill7').textContent = Math.round(bill * 7 * 0.9);
-    document.getElementById('bill30').textContent = Math.round(bill * 30 * 0.85);
+    document.getElementById('bill7').textContent = (parseFloat(bill) * 7 * 0.9).toFixed(2);
+    document.getElementById('bill30').textContent = (parseFloat(bill) * 30 * 0.85).toFixed(2);
     document.getElementById('high').textContent = rooms.reduce((a,b) => vals[a]>vals[b]?a:b);
     document.getElementById('suggestion').textContent = 'Consider shifting high-load appliances to off-peak hours (10 PM – 6 AM) to reduce your monthly bill by up to 18%.';
     const chip = document.getElementById('trend-chip');
