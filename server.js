@@ -14,6 +14,12 @@ mongoose.connect(mongoURI)
 .catch(err => console.log(err));
 
 
+// -------- ROUND FUNCTION --------
+function round(val, digits = 4) {
+    return Number(val || 0).toFixed(digits);
+}
+
+
 // -------- SCHEMAS --------
 
 // 🔴 LIVE DATA
@@ -28,7 +34,7 @@ const energySchema = new mongoose.Schema({
 
 const Energy = mongoose.model("Energy", energySchema);
 
-// 🟢 HISTORY DATA (IMPORTANT)
+// 🟢 HISTORY DATA
 const historySchema = new mongoose.Schema({
     device_id: String,
     hall: Number,
@@ -46,9 +52,9 @@ const History = mongoose.model("History", historySchema);
 function calculateBill(units) {
     let bill = 0;
 
-    if (units <= 100) bill = (units * 2.25);
+    if (units <= 100) bill = units * 2.25;
     else if (units <= 200)
-        bill = (units * 4.5);
+        bill = units * 4.5;
     else if (units <= 400)
         bill = (100 * 2.25) + (units - 200) * 4.5;
     else if (units <= 500)
@@ -71,7 +77,7 @@ app.post("/update-energy", async (req, res) => {
         data = new Energy({ device_id });
     }
 
-    // ✅ ADD DELTA VALUES
+    // ✅ ADD VALUES
     data.hall += hall;
     data.room += room;
     data.bath += bath;
@@ -82,7 +88,7 @@ app.post("/update-energy", async (req, res) => {
 
     await data.save();
 
-    // 🔥 SAVE HISTORY (VERY IMPORTANT)
+    // 🔥 SAVE HISTORY
     await History.create({
         device_id,
         hall: data.hall,
@@ -106,17 +112,17 @@ app.get("/get-energy/:id", async (req, res) => {
     const bill = calculateBill(data.total_energy);
 
     res.json({
-        hall: data.hall,
-        room: data.room,
-        bath: data.bath,
-        kitchen: data.kitchen,
-        total_energy: data.total_energy,
-        bill_amount: bill
+        hall: round(data.hall),
+        room: round(data.room),
+        bath: round(data.bath),
+        kitchen: round(data.kitchen),
+        total_energy: round(data.total_energy),
+        bill_amount: round(bill, 2)
     });
 });
 
 
-// -------- DASHBOARD API (LIVE + LAST 30 MIN HISTORY) --------
+// -------- DASHBOARD API --------
 app.get("/dashboard/:id", async (req, res) => {
 
     const device_id = req.params.id;
@@ -126,7 +132,7 @@ app.get("/dashboard/:id", async (req, res) => {
     const history = await History.find({
         device_id,
         timestamp: {
-            $gte: new Date(Date.now() - 30 * 60 * 1000) // last 30 min
+            $gte: new Date(Date.now() - 30 * 60 * 1000)
         }
     }).sort({ timestamp: 1 });
 
@@ -146,24 +152,21 @@ app.get("/predict/:id", async (req, res) => {
                                  .sort({ timestamp: 1 });
 
     if (!history || history.length < 2) {
-      return res.json({ message: "Not enough data for prediction" });
+      return res.json({ message: "Not enough data" });
     }
 
-    // 📊 Average
     let totalEnergy = 0;
     history.forEach(h => totalEnergy += h.total_energy);
 
     const avgEnergy = totalEnergy / history.length;
     const avgUnits = avgEnergy / 1000;
 
-    // 🔮 Future
     const units7 = avgUnits * 7;
     const units30 = avgUnits * 30;
 
     const bill7 = calculateBill(units7);
     const bill30 = calculateBill(units30);
 
-    // 📈 Trend
     const first = history[0].total_energy;
     const last  = history[history.length - 1].total_energy;
 
@@ -171,7 +174,6 @@ app.get("/predict/:id", async (req, res) => {
     if (last > first) trend = "Increasing 📈";
     else if (last < first) trend = "Decreasing 📉";
 
-    // ⚡ High usage
     let hall = 0, room = 0, bath = 0, kitchen = 0;
 
     history.forEach(h => {
@@ -188,7 +190,6 @@ app.get("/predict/:id", async (req, res) => {
     if (bath > maxValue) { maxArea = "Bathroom"; maxValue = bath; }
     if (kitchen > maxValue) { maxArea = "Kitchen"; maxValue = kitchen; }
 
-    // 💡 Suggestion
     let suggestion = `${maxArea} consumes more energy.`;
 
     if (maxArea === "Kitchen")
@@ -201,9 +202,9 @@ app.get("/predict/:id", async (req, res) => {
       suggestion = "Reduce geyser usage.";
 
     res.json({
-      avg_daily_units: avgUnits,
-      predicted_bill_7_days: bill7,
-      predicted_bill_30_days: bill30,
+      avg_daily_units: round(avgUnits),
+      predicted_bill_7_days: round(bill7, 2),
+      predicted_bill_30_days: round(bill30, 2),
       trend,
       high_usage_area: maxArea,
       suggestion
