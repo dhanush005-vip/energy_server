@@ -87,11 +87,21 @@ app.post("/update-energy", async (req, res) => {
 
     let elapsedHours = 0;
 
-    if (data.last_post) {
-      const diffMs = now - new Date(data.last_post);
-      elapsedHours = Math.max(diffMs / (1000 * 60 * 60), 0.0003); // minimum ~1 sec
-      elapsedHours = Math.min(elapsedHours, 1); // max 1 hour
-    }
+    // Skip accumulation if gap > 10 minutes (Render sleep/restart)
+if (data.last_post) {
+  const diffMs = now - new Date(data.last_post);
+  elapsedHours = diffMs / (1000 * 60 * 60);
+  
+  if (elapsedHours > (10 / 60)) {
+    // Gap too large — just update last_post, don't accumulate bad data
+    data.last_post = now;
+    data.updatedAt = now;
+    await data.save();
+    return res.json({ message: "Gap skipped" });
+  }
+  
+  elapsedHours = Math.max(elapsedHours, 0.0003);
+}
 
     // 🔥 Convert W → kWh
     data.hall    += ((hall || 0) * elapsedHours) / 1000;
@@ -172,36 +182,63 @@ app.get("/dashboard/:id", async (req, res) => {
 app.get("/predict/:id", async (req, res) => {
   try {
     const device_id = req.params.id;
-
     const current = await Energy.findOne({ device_id });
     if (!current) return res.json({ message: "No data" });
 
     const recent = await History.find({ device_id })
       .sort({ timestamp: -1 })
-      .limit(10);
+      .limit(20);
 
     let rate = 0;
 
     if (recent.length >= 2) {
       const newest = recent[0];
       const oldest = recent[recent.length - 1];
-
       const deltaKwh = newest.total_energy - oldest.total_energy;
       const deltaHrs = Math.max(
         (new Date(newest.timestamp) - new Date(oldest.timestamp)) / (1000 * 60 * 60),
         0.001
       );
-
-      rate = deltaKwh / deltaHrs;
+      rate = Math.max(deltaKwh / deltaHrs, 0);
     }
 
-    const perDay = rate * 24;
-    const perMonth = perDay * 30;
+    const perDay   = rate * 24;
+    const per7days = perDay * 7;
+    const per30days = perDay * 30;
+
+    // Determine trend
+    let trend = "Stable";
+    if (recent.length >= 6) {
+      const half  = Math.floor(recent.length / 2);
+      const newer = recent.slice(0, half);
+      const older = recent.slice(half);
+      const newerAvg = newer.reduce((s, r) => s + r.total_energy, 0) / newer.length;
+      const olderAvg = older.reduce((s, r) => s + r.total_energy, 0) / older.length;
+      if (newerAvg > olderAvg * 1.05) trend = "Increasing";
+      else if (newerAvg < olderAvg * 0.95) trend = "Decreasing";
+    }
+
+    // High usage area
+    const areas = { hall: current.hall, room: current.room, bath: current.bath, kitchen: current.kitchen };
+    const highArea = Object.entries(areas).sort((a,b) => b[1]-a[1])[0][0];
+
+    // Suggestion
+    const suggestions = {
+      hall:    "Your Hall is consuming the most energy. Consider switching to LED lighting and using smart plugs.",
+      room:    "Your Room leads in consumption. Check for AC or fans left running overnight.",
+      bath:    "Bathroom is using the most power. Geysers/water heaters are usually the culprit — use timers.",
+      kitchen: "Kitchen tops usage. Avoid keeping the fridge open and use a microwave instead of oven when possible."
+    };
 
     res.json({
-      predicted_units_30_days: round4(perMonth),
-      predicted_bill_30_days: calculateBill(perMonth),
-      usage_rate_per_hour: round4(rate)
+      predicted_units_7_days:  round4(per7days),
+      predicted_bill_7_days:   calculateBill(per7days),
+      predicted_units_30_days: round4(per30days),
+      predicted_bill_30_days:  calculateBill(per30days),
+      usage_rate_per_hour:     round4(rate),
+      trend,
+      high_usage_area: highArea.charAt(0).toUpperCase() + highArea.slice(1),
+      suggestion: suggestions[highArea]
     });
 
   } catch (err) {
