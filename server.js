@@ -259,6 +259,11 @@ const historySchema = new mongoose.Schema({
   bath:         { type: Number, default: 0 },
   kitchen:      { type: Number, default: 0 },
   total_energy: { type: Number, default: 0 },
+  // ✅ also store raw watts snapshot for prediction rate calculation
+  hall_watts:   { type: Number, default: 0 },
+  room_watts:   { type: Number, default: 0 },
+  bath_watts:   { type: Number, default: 0 },
+  kitchen_watts:{ type: Number, default: 0 },
   timestamp:    { type: Date,   default: Date.now }
 });
 const History = mongoose.model("History", historySchema);
@@ -275,7 +280,7 @@ function calculateBill(kwh) {
 }
 
 // ─── POST /update-energy ─────────────────────────────────────────────────────
-// OLD LOGIC PRESERVED: ESP32 sends Watts → added directly (no kWh conversion here)
+// OLD LOGIC PRESERVED: raw watts added directly for dashboard/bill display
 app.post("/update-energy", async (req, res) => {
   console.log("📦 ESP32 sent:", req.body);
   try {
@@ -286,25 +291,30 @@ app.post("/update-energy", async (req, res) => {
 
     const now = new Date();
 
-    // ✅ OLD LOGIC UNCHANGED: add raw values directly for dashboard/bill
+    // ✅ OLD LOGIC UNCHANGED for dashboard & bill
     data.hall    += (hall    || 0);
     data.room    += (room    || 0);
     data.bath    += (bath    || 0);
     data.kitchen += (kitchen || 0);
 
     data.total_energy = data.hall + data.room + data.bath + data.kitchen;
-    data.last_post    = now;  // saved but only used in /predict
+    data.last_post    = now;
     data.updatedAt    = now;
 
     await data.save();
 
+    // ✅ Save raw watts in history too — used by /predict for correct rate
     await History.create({
       device_id,
-      hall:         data.hall,
-      room:         data.room,
-      bath:         data.bath,
-      kitchen:      data.kitchen,
-      total_energy: data.total_energy
+      hall:          data.hall,
+      room:          data.room,
+      bath:          data.bath,
+      kitchen:       data.kitchen,
+      total_energy:  data.total_energy,
+      hall_watts:    (hall    || 0),
+      room_watts:    (room    || 0),
+      bath_watts:    (bath    || 0),
+      kitchen_watts: (kitchen || 0)
     });
 
     res.send("OK");
@@ -362,7 +372,9 @@ app.get("/dashboard/:id", async (req, res) => {
 });
 
 // ─── GET /predict/:id ────────────────────────────────────────────────────────
-// ✅ ONLY THIS ROUTE uses elapsed hours to compute a realistic rate for prediction
+// ✅ FIXED PREDICTION: uses average WATTS from recent snapshots
+//    Watts → real kWh/hour rate → realistic 7 & 30 day projection
+//    Works correctly even for short 3-5 minute demo sessions
 app.get("/predict/:id", async (req, res) => {
   try {
     const device_id = req.params.id;
@@ -371,45 +383,51 @@ app.get("/predict/:id", async (req, res) => {
 
     const billNow = calculateBill(current.total_energy);
 
-    // Fetch last 10 minutes of history, sorted oldest → newest (ascending)
+    // Fetch last 2 minutes of history (works for short demo sessions)
     const recent = await History.find({
       device_id,
-      timestamp: { $gte: new Date(Date.now() - 10 * 60 * 1000) }
-    }).sort({ timestamp: 1 }); // [0] = oldest, [last] = newest
+      timestamp: { $gte: new Date(Date.now() - 2 * 60 * 1000) }
+    }).sort({ timestamp: 1 }); // [0]=oldest, [last]=newest
 
     let kwhPerHour = 0;
     let trend = "Stable ➡️";
 
-    if (recent.length >= 2) {
-      // ✅ FIXED: ascending sort → [0] is oldest, [last] is newest
-      const oldest = recent[0];
-      const newest = recent[recent.length - 1];
+    if (recent.length >= 1) {
+      // ✅ KEY FIX: Average the raw watts across recent snapshots
+      //    then convert Watts → kWh/hour (divide by 1000)
+      //    This gives a REAL consumption rate regardless of how long device ran
+      const avgHall    = recent.reduce((s, r) => s + (r.hall_watts    || 0), 0) / recent.length;
+      const avgRoom    = recent.reduce((s, r) => s + (r.room_watts    || 0), 0) / recent.length;
+      const avgBath    = recent.reduce((s, r) => s + (r.bath_watts    || 0), 0) / recent.length;
+      const avgKitchen = recent.reduce((s, r) => s + (r.kitchen_watts || 0), 0) / recent.length;
 
-      // ✅ FIXED: newest - oldest = positive energy delta
-      const deltaEnergy = newest.total_energy - oldest.total_energy;
+      const totalAvgWatts = avgHall + avgRoom + avgBath + avgKitchen;
 
-      // Real elapsed time between the two history points
-      const deltaHours = Math.max(
-        (new Date(newest.timestamp) - new Date(oldest.timestamp)) / (1000 * 60 * 60),
-        1 / 3600 // min 1 second to avoid divide-by-zero
-      );
+      // Watts ÷ 1000 = kW, and kW running for 1 hour = kWh
+      kwhPerHour = totalAvgWatts / 1000;
 
-      kwhPerHour = deltaEnergy / deltaHours;
+      // Trend: compare newest vs oldest snapshot
+      if (recent.length >= 2) {
+        const oldest = recent[0];
+        const newest = recent[recent.length - 1];
+        const oldTotal = (oldest.hall_watts || 0) + (oldest.room_watts || 0) + (oldest.bath_watts || 0) + (oldest.kitchen_watts || 0);
+        const newTotal = (newest.hall_watts || 0) + (newest.room_watts || 0) + (newest.bath_watts || 0) + (newest.kitchen_watts || 0);
 
-      // Trend detection
-      if (newest.total_energy > oldest.total_energy * 1.02)      trend = "Increasing 📈";
-      else if (newest.total_energy < oldest.total_energy * 0.98) trend = "Decreasing 📉";
-      else                                                         trend = "Stable ➡️";
+        if (newTotal > oldTotal * 1.02)      trend = "Increasing 📈";
+        else if (newTotal < oldTotal * 0.98) trend = "Decreasing 📉";
+        else                                  trend = "Stable ➡️";
+      }
 
     } else {
-      // Fallback: use total accumulated energy ÷ total hours since device was created
+      // Fallback: use total accumulated ÷ elapsed hours since created
       const diffHours = Math.max(
         (new Date() - new Date(current.createdAt)) / (1000 * 60 * 60), 1
       );
-      kwhPerHour = current.total_energy / diffHours;
+      // total_energy here is raw watts sum, convert to kWh rate
+      kwhPerHour = (current.total_energy / 1000) / diffHours;
     }
 
-    // Guard against negative rate from any DB anomalies
+    // Guard against negative rate
     kwhPerHour = Math.max(kwhPerHour, 0);
 
     const kwhPerDay = kwhPerHour * 24;
