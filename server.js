@@ -14,19 +14,21 @@ mongoose.connect(process.env.MONGO_URI)
 function round4(val) { return Number(Number(val || 0).toFixed(4)); }
 function round2(val) { return Number(Number(val || 0).toFixed(2)); }
 
+// ✅ OLD SCHEMA — unchanged
 const energySchema = new mongoose.Schema({
   device_id:    String,
-  hall:         { type: Number, default: 0 },  // cumulative kWh
+  hall:         { type: Number, default: 0 },
   room:         { type: Number, default: 0 },
   bath:         { type: Number, default: 0 },
   kitchen:      { type: Number, default: 0 },
-  total_energy: { type: Number, default: 0 },  // cumulative kWh
-  last_post:    { type: Date,   default: null },// ← tracks last POST time
+  total_energy: { type: Number, default: 0 },
+  last_post:    { type: Date,   default: null },
   createdAt:    { type: Date,   default: Date.now },
   updatedAt:    { type: Date,   default: Date.now }
 });
 const Energy = mongoose.model("Energy", energySchema);
 
+// ✅ OLD SCHEMA — unchanged
 const historySchema = new mongoose.Schema({
   device_id:    String,
   hall:         { type: Number, default: 0 },
@@ -50,7 +52,7 @@ function calculateBill(kwh) {
 }
 
 // ─── POST /update-energy ─────────────────────────────────────────────────────
-// ESP32 sends Watts → we convert to kWh using elapsed time since last POST
+// ✅ OLD LOGIC — raw watts added directly, no changes
 app.post("/update-energy", async (req, res) => {
   console.log("📦 ESP32 sent:", req.body);
   try {
@@ -61,14 +63,10 @@ app.post("/update-energy", async (req, res) => {
 
     const now = new Date();
 
-    // Calculate elapsed hours since last POST (min 1 second to avoid spike)
-  
-
-    // Watts × hours = Wh → ÷ 1000 = kWh
-    data.hall    += (hall    || 0) 
-    data.room    += (room    || 0) 
-    data.bath    += (bath    || 0) 
-    data.kitchen += (kitchen || 0) 
+    data.hall    += (hall    || 0);
+    data.room    += (room    || 0);
+    data.bath    += (bath    || 0);
+    data.kitchen += (kitchen || 0);
 
     data.total_energy = data.hall + data.room + data.bath + data.kitchen;
     data.last_post    = now;
@@ -140,45 +138,67 @@ app.get("/dashboard/:id", async (req, res) => {
 });
 
 // ─── GET /predict/:id ────────────────────────────────────────────────────────
-/*
 app.get("/predict/:id", async (req, res) => {
   try {
     const device_id = req.params.id;
     const current   = await Energy.findOne({ device_id });
     if (!current) return res.json({ message: "No data found" });
 
-    const billNow = calculateBill(current.total_energy);
+    // Fetch last 5 minutes of history sorted oldest → newest
+    const recent = await History.find({
+      device_id,
+      timestamp: { $gte: new Date(Date.now() - 5 * 60 * 1000) }
+    }).sort({ timestamp: 1 }); // [0]=oldest, [last]=newest
 
-    const recent = await History.find({device_id,
-     timestamp: { $gte: new Date(Date.now() - 10 * 60 * 1000) } // last 10 minutes
-     }).sort({ timestamp: 1 });
-
-    let kwhPerHour = 0;
-    let trend = "Stable";
+    let wattsNow = 0;
+    let trend = "Stable ➡️";
 
     if (recent.length >= 2) {
-      const newest     = recent[0];
-      const oldest     = recent[recent.length - 1];
+      const oldest = recent[0];
+      const newest = recent[recent.length - 1];
 
-      const deltaKwh   = oldest.total_energy - newest.total_energy;
-      const deltaHours = Math.max(
-        (new Date(oldest.timestamp) - new Date(newest.timestamp)) / (1000 * 60 * 60),
-        0.1
+      // ✅ deltaEnergy = how many watts were added between oldest & newest snapshots
+      const deltaEnergy  = newest.total_energy - oldest.total_energy;
+      // ✅ deltaMinutes = real time elapsed between them
+      const deltaMinutes = Math.max(
+        (new Date(newest.timestamp) - new Date(oldest.timestamp)) / (1000 * 60),
+        1
       );
-      kwhPerHour = deltaKwh / deltaHours;
 
-      if (newest.total_energy > oldest.total_energy * 1.02)      trend = "Increasing 📈";
-      else if (newest.total_energy < oldest.total_energy * 0.98) trend = "Decreasing 📉";
+      // ✅ watts per minute → average watts right now
+      const wattsPerMinute = deltaEnergy / deltaMinutes;
+
+      // ✅ convert to actual Watts: multiply back by 60 (since ESP32 sends Watts/min accumulation)
+      wattsNow = Math.max(wattsPerMinute * 60, 0);
+
+      // Trend detection
+      if (deltaEnergy > 0.01)       trend = "Increasing 📈";
+      else if (deltaEnergy < -0.01) trend = "Decreasing 📉";
+      else                           trend = "Stable ➡️";
+
+    } else if (recent.length === 1) {
+      // Only 1 snapshot — use total posts to estimate average watts per POST
+      const totalPosts = await History.countDocuments({ device_id });
+      wattsNow = totalPosts > 1 ? (current.total_energy / totalPosts) : 0;
+
     } else {
-      const diffHours = Math.max(
-        (new Date() - new Date(current.createdAt)) / (1000 * 60 * 60), 1
-      );
-      kwhPerHour = current.total_energy / diffHours;
+      // No recent history at all — estimate from all-time average
+      const totalPosts = await History.countDocuments({ device_id });
+      wattsNow = totalPosts > 1 ? (current.total_energy / totalPosts) : 0;
     }
 
-    const kwhPerDay = (billNow) * 24;
-    const kwh7      = kwhPerDay * 7;
-    const kwh30     = kwhPerDay * 30;
+    // ✅ KEY FORMULA:
+    // wattsNow = current watts being consumed right now
+    // wattsNow ÷ 1000 = kW
+    // kW × 24hrs = kWh per day
+    // kWh per day × 30 = monthly kWh
+    const kwhPerDay  = (wattsNow / 1000) * 24;
+    const kwh7       = kwhPerDay * 7;
+    const kwh30      = kwhPerDay * 30;
+
+    // ✅ Bill is calculated ONLY on projected kWh — NOT on current_total + projected
+    const predicted_bill_7_days  = calculateBill(kwh7);
+    const predicted_bill_30_days = calculateBill(kwh30);
 
     const areas = {
       Hall:     current.hall,
@@ -199,12 +219,12 @@ app.get("/predict/:id", async (req, res) => {
 
     res.json({
       current_units:           round4(current.total_energy),
-      estimated_bill_now:      round2(billNow),
+      estimated_bill_now:      round2(calculateBill(current.total_energy)),
       predicted_units_7_days:  round4(kwh7),
       predicted_units_30_days: round4(kwh30),
-      predicted_bill_7_days:   round2(calculateBill(kwh7)),
-      predicted_bill_30_days:  round2(calculateBill(kwh30)),
-      usage_rate_per_hour:     round4(kwhPerHour),
+      predicted_bill_7_days:   round2(predicted_bill_7_days),
+      predicted_bill_30_days:  round2(predicted_bill_30_days),
+      usage_rate_per_hour:     round4(wattsNow / 1000),
       trend,
       high_usage_area:         maxArea,
       suggestion:              suggestions[maxArea]
@@ -216,85 +236,5 @@ app.get("/predict/:id", async (req, res) => {
   }
 });
 
-
-*/
-app.get("/predict/:id", async (req, res) => {
-  try {
-    const device_id = req.params.id;
-    const current = await Energy.findOne({ device_id });
-    if (!current) return res.json({ message: "No data found" });
-
-    const now = new Date();
-
-    const recent = await History.find({
-      device_id,
-      timestamp: { $gte: new Date(Date.now() - 5 * 60 * 1000) } // last 5 mins
-    }).sort({ timestamp: 1 });
-
-    let ratePerMinute = 0;
-    let trend = "Stable";
-
-    if (recent.length >= 2) {
-      const oldest = recent[0];
-      const newest = recent[recent.length - 1];
-
-      const deltaUnits = newest.total_energy - oldest.total_energy;
-      const deltaMinutes = Math.max(
-        (new Date(newest.timestamp) - new Date(oldest.timestamp)) / (1000 * 60),
-        1
-      );
-
-      ratePerMinute = deltaUnits / deltaMinutes;
-
-      if (deltaUnits > 0.01) trend = "Increasing 📈";
-      else if (deltaUnits < -0.01) trend = "Decreasing 📉";
-    } else {
-      ratePerMinute = current.total_energy / 5;
-    }
-
-    const safeRate = Math.max(ratePerMinute, 0) * 0.7;
-
-    const projectedUnits7 = current.total_energy + (safeRate * 60 * 24 * 7);
-    const projectedUnits30 = current.total_energy + (safeRate * 60 * 24 * 30);
-
-    const predicted_bill_7_days = calculateBill(projectedUnits7);
-    const predicted_bill_30_days = calculateBill(projectedUnits30);
-
-    const areas = {
-      Hall: current.hall,
-      Room: current.room,
-      Bathroom: current.bath,
-      Kitchen: current.kitchen
-    };
-
-    const maxArea = Object.entries(areas).reduce(
-      (a, b) => b[1] > a[1] ? b : a,
-      ["Hall", 0]
-    )[0];
-
-    const suggestions = {
-      Hall: "Hall usage is highest. Turn off lights and fans when not in the room.",
-      Room: "Bedroom consumes the most energy. Optimise AC and fan schedules.",
-      Bathroom: "Bathroom usage is highest. Cut down geyser run time.",
-      Kitchen: "Kitchen uses the most power. Reduce heater/microwave usage."
-    };
-
-    res.json({
-      current_units: round4(current.total_energy),
-      estimated_bill_now: round2(calculateBill(current.total_energy)),
-      predicted_units_7_days: round4(projectedUnits7),
-      predicted_units_30_days: round4(projectedUnits30),
-      predicted_bill_7_days: round2(predicted_bill_7_days),
-      predicted_bill_30_days: round2(predicted_bill_30_days),
-      usage_rate_per_minute: round4(safeRate),
-      trend,
-      high_usage_area: maxArea,
-      suggestion: suggestions[maxArea]
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Prediction error" });
-  }
-});
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
