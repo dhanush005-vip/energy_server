@@ -175,7 +175,7 @@ app.get("/predict/:id", async (req, res) => {
       kwhPerHour = current.total_energy / diffHours;
     }
 
-    const kwhPerDay = kwhPerHour * 24;
+    const kwhPerDay = (live.total_energy) * 24;
     const kwh7      = kwhPerDay * 7;
     const kwh30     = kwhPerDay * 30;
 
