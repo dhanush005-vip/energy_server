@@ -140,6 +140,7 @@ app.get("/dashboard/:id", async (req, res) => {
 });
 
 // ─── GET /predict/:id ────────────────────────────────────────────────────────
+/*
 app.get("/predict/:id", async (req, res) => {
   try {
     const device_id = req.params.id;
@@ -215,7 +216,88 @@ app.get("/predict/:id", async (req, res) => {
   }
 });
 
+
+
+*/
+app.get("/predict/:id", async (req, res) => {
+  try {
+    const device_id = req.params.id;
+    const current = await Energy.findOne({ device_id });
+    if (!current) return res.json({ message: "No data found" });
+
+    const now = new Date();
+
+    const recent = await History.find({
+      device_id,
+      timestamp: { $gte: new Date(Date.now() - 5 * 60 * 1000) } // last 5 mins
+    }).sort({ timestamp: 1 });
+
+    let ratePerMinute = 0;
+    let trend = "Stable";
+
+    if (recent.length >= 2) {
+      const oldest = recent[0];
+      const newest = recent[recent.length - 1];
+
+      const deltaUnits = newest.total_energy - oldest.total_energy;
+      const deltaMinutes = Math.max(
+        (new Date(newest.timestamp) - new Date(oldest.timestamp)) / (1000 * 60),
+        1
+      );
+
+      ratePerMinute = deltaUnits / deltaMinutes;
+
+      if (deltaUnits > 0.01) trend = "Increasing 📈";
+      else if (deltaUnits < -0.01) trend = "Decreasing 📉";
+    } else {
+      ratePerMinute = current.total_energy / 5;
+    }
+
+    const safeRate = Math.max(ratePerMinute, 0) * 0.7;
+
+    const projectedUnits7 = current.total_energy + (safeRate * 60 * 24 * 7);
+    const projectedUnits30 = current.total_energy + (safeRate * 60 * 24 * 30);
+
+    const predicted_bill_7_days = calculateBill(projectedUnits7);
+    const predicted_bill_30_days = calculateBill(projectedUnits30);
+
+    const areas = {
+      Hall: current.hall,
+      Room: current.room,
+      Bathroom: current.bath,
+      Kitchen: current.kitchen
+    };
+
+    const maxArea = Object.entries(areas).reduce(
+      (a, b) => b[1] > a[1] ? b : a,
+      ["Hall", 0]
+    )[0];
+
+    const suggestions = {
+      Hall: "Hall usage is highest. Turn off lights and fans when not in the room.",
+      Room: "Bedroom consumes the most energy. Optimise AC and fan schedules.",
+      Bathroom: "Bathroom usage is highest. Cut down geyser run time.",
+      Kitchen: "Kitchen uses the most power. Reduce heater/microwave usage."
+    };
+
+    res.json({
+      current_units: round4(current.total_energy),
+      estimated_bill_now: round2(calculateBill(current.total_energy)),
+      predicted_units_7_days: round4(projectedUnits7),
+      predicted_units_30_days: round4(projectedUnits30),
+      predicted_bill_7_days: round2(predicted_bill_7_days),
+      predicted_bill_30_days: round2(predicted_bill_30_days),
+      usage_rate_per_minute: round4(safeRate),
+      trend,
+      high_usage_area: maxArea,
+      suggestion: suggestions[maxArea]
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Prediction error" });
+  }
+
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-
-
+});
