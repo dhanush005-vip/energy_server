@@ -217,7 +217,6 @@ app.get("/predict/:id", async (req, res) => {
 });
 
 
-
 */
 app.get("/predict/:id", async (req, res) => {
   try {
@@ -296,8 +295,6 @@ app.get("/predict/:id", async (req, res) => {
     console.error(err);
     res.status(500).json({ error: "Prediction error" });
   }
-
-
+});
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-});
