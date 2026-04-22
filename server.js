@@ -254,22 +254,35 @@ app.get("/predict/:id", async (req, res) => {
 
     const totalEnergy = current.total_energy || 0;
 
-    // ✅ Determine rate per unit based on current total energy (TANGEDCO slabs)
-    // Below 100 kWh → ₹1.25, Above 100 kWh → ₹2.50
-    const ratePerUnit = totalEnergy > 100 ? 2.50 : 1.25;
+    // ✅ Only calculate prediction at multiples of 5 (5, 10, 15, 20...)
+    const nearestMultipleOf5 = Math.floor(totalEnergy / 5) * 5;
 
-    // ✅ Daily cost = totalEnergy × rate (how much this total costs per day pattern)
-    const dailyCost = totalEnergy * ratePerUnit;
+    // If totalEnergy hasn't reached first 5 yet, return waiting message
+    if (nearestMultipleOf5 < 5) {
+      return res.json({
+        current_units:      round4(totalEnergy),
+        estimated_bill_now: round2(calculateBill(totalEnergy)),
+        message:            `Waiting for energy to reach 5 kWh... Currently at ${round4(totalEnergy)} kWh`,
+        predicted_bill_7_days:  0,
+        predicted_bill_30_days: 0,
+        trend:              "Stable ➡️",
+        high_usage_area:    "—",
+        suggestion:         "Keep monitoring. Prediction starts at 5 kWh."
+      });
+    }
 
-    // ✅ Project forward: multiply daily cost × 7 or × 30
+    // ✅ Use the nearest multiple of 5 for prediction (not raw total)
+    // e.g. if totalEnergy = 7.3 → use 5, if 11.8 → use 10, if 16.2 → use 15
+    const ratePerUnit = nearestMultipleOf5 >= 100 ? 2.50 : 1.25;
+
+    const dailyCost          = nearestMultipleOf5 * ratePerUnit;
     const predicted_bill_7_days  = round2(dailyCost * 7);
     const predicted_bill_30_days = round2(dailyCost * 30);
 
-    // Projected units (for display)
-    const kwh7  = round4(totalEnergy * 7);
-    const kwh30 = round4(totalEnergy * 30);
+    const kwh7  = round4(nearestMultipleOf5 * 7);
+    const kwh30 = round4(nearestMultipleOf5 * 30);
 
-    // ── Trend detection from last 5 minutes ──────────────────────────────
+    // ── Trend detection ───────────────────────────────────────────────────
     const recent = await History.find({
       device_id,
       timestamp: { $gte: new Date(Date.now() - 5 * 60 * 1000) }
@@ -302,6 +315,7 @@ app.get("/predict/:id", async (req, res) => {
 
     res.json({
       current_units:           round4(totalEnergy),
+      milestone_units:         nearestMultipleOf5,   // e.g. 5, 10, 15...
       estimated_bill_now:      round2(calculateBill(totalEnergy)),
       predicted_units_7_days:  kwh7,
       predicted_units_30_days: kwh30,
