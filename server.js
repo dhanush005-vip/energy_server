@@ -338,6 +338,7 @@ app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
 */
 
 // ─── GET /predict/:id ────────────────────────────────────────────────────────
+/*
 app.get("/predict/:id", async (req, res) => {
   try {
     const device_id = req.params.id;
@@ -415,6 +416,98 @@ app.get("/predict/:id", async (req, res) => {
       trend,
       high_usage_area:         maxArea,
       suggestion:              suggestions[maxArea]
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Prediction error" });
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+
+*/
+// ─── GET /predict/:id ────────────────────────────────────────────────────────
+app.get("/predict/:id", async (req, res) => {
+  try {
+    const device_id = req.params.id;
+    const current   = await Energy.findOne({ device_id });
+    if (!current) return res.json({ message: "No data found" });
+
+    const totalEnergy = current.total_energy || 0;
+
+    // ✅ LIVE high usage — always from last ESP32 POST, no conditions
+    const lastPost = await History.findOne({ device_id }).sort({ timestamp: -1 });
+
+    const liveAreas = lastPost ? {
+      Hall:     lastPost.hall,
+      Room:     lastPost.room,
+      Bathroom: lastPost.bath,
+      Kitchen:  lastPost.kitchen
+    } : {
+      Hall: 0, Room: 0, Bathroom: 0, Kitchen: 0
+    };
+
+    const maxArea = Object.entries(liveAreas).reduce(
+      (a, b) => b[1] > a[1] ? b : a, ["Hall", 0]
+    )[0];
+
+    const suggestions = {
+      Hall:     "Hall usage is highest right now. Turn off lights and fans when not in the Hall.",
+      Room:     "Room is consuming the most right now. Optimise AC and fan schedules.",
+      Bathroom: "Bathroom is drawing high power right now. Cut down Heater run time.",
+      Kitchen:  "Kitchen is using the most power right now. Reduce Induction stove/Microwave usage."
+    };
+
+    const nearestMultipleOf5 = Math.floor(totalEnergy / 5) * 5;
+
+    // ✅ Under 5 kWh — bill prediction is 0 but suggestion is always live
+    if (nearestMultipleOf5 < 5) {
+      return res.json({
+        current_units:          round4(totalEnergy),
+        estimated_bill_now:     round2(calculateBill(totalEnergy)),
+        predicted_bill_7_days:  0,
+        predicted_bill_30_days: 0,
+        trend:                  "Stable ➡️",
+        high_usage_area:        maxArea,          // ✅ always live
+        suggestion:             suggestions[maxArea] // ✅ always live
+      });
+    }
+
+    // ── Above 5 kWh: full prediction ──────────────────────────────────────
+    const ratePerUnit            = nearestMultipleOf5 >= 100 ? 2.50 : 1.25;
+    const dailyCost              = nearestMultipleOf5 * ratePerUnit;
+    const predicted_bill_7_days  = round2(dailyCost * 7);
+    const predicted_bill_30_days = round2(dailyCost * 30);
+    const kwh7                   = round4(nearestMultipleOf5 * 7);
+    const kwh30                  = round4(nearestMultipleOf5 * 30);
+
+    // ── Trend detection ───────────────────────────────────────────────────
+    const recent = await History.find({
+      device_id,
+      timestamp: { $gte: new Date(Date.now() - 5 * 60 * 1000) }
+    }).sort({ timestamp: 1 });
+
+    let trend = "Stable ➡️";
+    if (recent.length >= 2) {
+      const deltaEnergy = recent[recent.length - 1].total_energy - recent[0].total_energy;
+      if      (deltaEnergy > 0.01)  trend = "Increasing 📈";
+      else if (deltaEnergy < -0.01) trend = "Decreasing 📉";
+    }
+
+    res.json({
+      current_units:           round4(totalEnergy),
+      milestone_units:         nearestMultipleOf5,
+      estimated_bill_now:      round2(calculateBill(totalEnergy)),
+      predicted_units_7_days:  kwh7,
+      predicted_units_30_days: kwh30,
+      predicted_bill_7_days,
+      predicted_bill_30_days,
+      rate_per_unit:           ratePerUnit,
+      trend,
+      high_usage_area:         maxArea,          // ✅ always live
+      suggestion:              suggestions[maxArea] // ✅ always live
     });
 
   } catch (err) {
