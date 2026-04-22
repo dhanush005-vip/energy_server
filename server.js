@@ -163,7 +163,7 @@ app.get("/dashboard/:id", async (req, res) => {
     res.status(500).json({ error: "Dashboard error" });
   }
 });
-
+/*
 // ─── GET /predict/:id ────────────────────────────────────────────────────────
 app.get("/predict/:id", async (req, res) => {
   try {
@@ -217,10 +217,10 @@ app.get("/predict/:id", async (req, res) => {
     )[0];
 
     const suggestions = {
-      Hall:     "Hall usage is highest. Turn off lights and fans when not in the room.",
+      Hall:     "Hall usage is highest. Turn off lights and fans when not in the Hall.",
       Room:     "Bedroom consumes the most energy. Optimise AC and fan schedules.",
-      Bathroom: "Bathroom usage is highest. Cut down geyser run time.",
-      Kitchen:  "Kitchen uses the most power. Reduce heater/microwave usage."
+      Bathroom: "Bathroom usage is highest. Cut down Heater run time.",
+      Kitchen:  "Kitchen uses the most power. Reduce Induction stove/Microwave usage."
     };
 
     res.json({
@@ -231,6 +231,83 @@ app.get("/predict/:id", async (req, res) => {
       predicted_bill_7_days:   round2(calculateBill(kwh7)),
       predicted_bill_30_days:  round2(calculateBill(kwh30)),
       usage_rate_per_hour:     round4(wattsNow / 1000),
+      trend,
+      high_usage_area:         maxArea,
+      suggestion:              suggestions[maxArea]
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Prediction error" });
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+*/
+// ─── GET /predict/:id ────────────────────────────────────────────────────────
+app.get("/predict/:id", async (req, res) => {
+  try {
+    const device_id = req.params.id;
+    const current   = await Energy.findOne({ device_id });
+    if (!current) return res.json({ message: "No data found" });
+
+    const totalEnergy = current.total_energy || 0;
+
+    // ✅ Determine rate per unit based on current total energy (TANGEDCO slabs)
+    // Below 100 kWh → ₹2.25, Above 100 kWh → ₹4.50
+    const ratePerUnit = totalEnergy > 100 ? 4.50 : 2.25;
+
+    // ✅ Daily cost = totalEnergy × rate (how much this total costs per day pattern)
+    const dailyCost = totalEnergy * ratePerUnit;
+
+    // ✅ Project forward: multiply daily cost × 7 or × 30
+    const predicted_bill_7_days  = round2(dailyCost * 7);
+    const predicted_bill_30_days = round2(dailyCost * 30);
+
+    // Projected units (for display)
+    const kwh7  = round4(totalEnergy * 7);
+    const kwh30 = round4(totalEnergy * 30);
+
+    // ── Trend detection from last 5 minutes ──────────────────────────────
+    const recent = await History.find({
+      device_id,
+      timestamp: { $gte: new Date(Date.now() - 5 * 60 * 1000) }
+    }).sort({ timestamp: 1 });
+
+    let trend = "Stable ➡️";
+    if (recent.length >= 2) {
+      const deltaEnergy = recent[recent.length - 1].total_energy - recent[0].total_energy;
+      if      (deltaEnergy > 0.01)  trend = "Increasing 📈";
+      else if (deltaEnergy < -0.01) trend = "Decreasing 📉";
+    }
+
+    // ── High usage area ───────────────────────────────────────────────────
+    const areas = {
+      Hall:     current.hall,
+      Room:     current.room,
+      Bathroom: current.bath,
+      Kitchen:  current.kitchen
+    };
+    const maxArea = Object.entries(areas).reduce(
+      (a, b) => b[1] > a[1] ? b : a, ["Hall", 0]
+    )[0];
+
+    const suggestions = {
+      Hall:     "Hall usage is highest. Turn off lights and fans when not in the Hall.",
+      Room:     "Bedroom consumes the most energy. Optimise AC and fan schedules.",
+      Bathroom: "Bathroom usage is highest. Cut down Heater run time.",
+      Kitchen:  "Kitchen uses the most power. Reduce Induction stove/Microwave usage."
+    };
+
+    res.json({
+      current_units:           round4(totalEnergy),
+      estimated_bill_now:      round2(calculateBill(totalEnergy)),
+      predicted_units_7_days:  kwh7,
+      predicted_units_30_days: kwh30,
+      predicted_bill_7_days,
+      predicted_bill_30_days,
+      rate_per_unit:           ratePerUnit,
       trend,
       high_usage_area:         maxArea,
       suggestion:              suggestions[maxArea]
