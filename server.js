@@ -45,9 +45,9 @@ function calculateBill(kwh) {
   kwh = kwh || 0;
   if (kwh <= 0) return 0;
   let bill = 0;
-  if      (kwh <= 100) bill = kwh * 2.25;
-  else if (kwh <= 400) bill = (100 * 2.25) + (kwh - 100) * 4.45;
-  else                 bill = (100 * 2.25) + (300 * 4.45) + (kwh - 400) * 6.00;
+  if      (kwh <= 100) bill = kwh * 1.25;
+  else if (kwh <= 400) bill = (100 * 1.25) + (kwh - 100) * 2.5;
+  else                 bill = (100 * 1.25) + (300 * 2.5) + (kwh - 400) * 6.00;
   return round2(bill);
 }
 
@@ -255,8 +255,8 @@ app.get("/predict/:id", async (req, res) => {
     const totalEnergy = current.total_energy || 0;
 
     // ✅ Determine rate per unit based on current total energy (TANGEDCO slabs)
-    // Below 100 kWh → ₹2.25, Above 100 kWh → ₹4.50
-    const ratePerUnit = totalEnergy > 100 ? 4.50 : 2.25;
+    // Below 100 kWh → ₹1.25, Above 100 kWh → ₹2.50
+    const ratePerUnit = totalEnergy > 100 ? 2.50 : 1.25;
 
     // ✅ Daily cost = totalEnergy × rate (how much this total costs per day pattern)
     const dailyCost = totalEnergy * ratePerUnit;
