@@ -163,7 +163,6 @@ app.get("/dashboard/:id", async (req, res) => {
     res.status(500).json({ error: "Dashboard error" });
   }
 });
-/*
 // ─── GET /predict/:id ────────────────────────────────────────────────────────
 app.get("/predict/:id", async (req, res) => {
   try {
@@ -244,7 +243,7 @@ app.get("/predict/:id", async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-*/
+/*
 // ─── GET /predict/:id ────────────────────────────────────────────────────────
 app.get("/predict/:id", async (req, res) => {
   try {
@@ -332,6 +331,7 @@ app.get("/predict/:id", async (req, res) => {
     res.status(500).json({ error: "Prediction error" });
   }
 });
+*/
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
