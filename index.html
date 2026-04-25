@@ -1,15 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart Energy Pro</title>
+  <title>IoT And AI Based Smart Plug Energy Usage Analysis and Prediction System</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    :root {
+    /* ── DARK THEME (default) ── */
+    :root, [data-theme="dark"] {
       --bg: #09090f;
       --surface: #111118;
       --surface2: #18181f;
@@ -23,8 +24,27 @@
       --accent3: #ffd43b;
       --warn: #ff6b6b;
       --green: #51cf66;
+      --shadow: rgba(0,0,0,0.4);
       --font: 'DM Sans', sans-serif;
       --mono: 'DM Mono', monospace;
+    }
+
+    /* ── LIGHT THEME ── */
+    [data-theme="light"] {
+      --bg: #f4f4f8;
+      --surface: #ffffff;
+      --surface2: #f0f0f6;
+      --border: rgba(0,0,0,0.08);
+      --border-glow: rgba(79,168,255,0.3);
+      --text: #0f0f1a;
+      --muted: #6b6b80;
+      --faint: #d0d0de;
+      --accent: #2e8fe0;
+      --accent2: #1aaa82;
+      --accent3: #d4960a;
+      --warn: #e84545;
+      --green: #2ea84a;
+      --shadow: rgba(0,0,0,0.08);
     }
 
     body {
@@ -34,6 +54,7 @@
       min-height: 100vh;
       font-size: 14px;
       line-height: 1.5;
+      transition: background 0.3s, color 0.3s;
     }
 
     /* TOP BAR */
@@ -43,11 +64,13 @@
       justify-content: space-between;
       padding: 16px 28px;
       border-bottom: 1px solid var(--border);
-      background: rgba(9,9,15,0.9);
+      background: var(--surface);
       backdrop-filter: blur(12px);
       position: sticky;
       top: 0;
       z-index: 100;
+      box-shadow: 0 1px 12px var(--shadow);
+      transition: background 0.3s, border-color 0.3s;
     }
 
     .logo {
@@ -70,16 +93,12 @@
       font-size: 14px;
     }
 
-    .logo-sub {
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 400;
-    }
+    .logo-sub { color: var(--muted); font-size: 12px; font-weight: 400; }
 
     .topbar-right {
       display: flex;
       align-items: center;
-      gap: 20px;
+      gap: 12px;
     }
 
     .status-dot {
@@ -101,7 +120,7 @@
 
     @keyframes pulse {
       0%, 100% { box-shadow: 0 0 0 3px rgba(81,207,102,0.2); }
-      50% { box-shadow: 0 0 0 5px rgba(81,207,102,0.08); }
+      50%       { box-shadow: 0 0 0 5px rgba(81,207,102,0.08); }
     }
 
     .device-badge {
@@ -114,26 +133,129 @@
       color: var(--muted);
     }
 
-    .last-update {
-      font-size: 11px;
-      color: var(--faint);
-      font-family: var(--mono);
+    .last-update { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+
+    /* ── THEME TOGGLE BUTTON ── */
+    .theme-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      transition: background 0.2s, border-color 0.2s, transform 0.15s;
     }
+    .theme-btn:hover { background: var(--faint); transform: scale(1.05); }
+
+    /* ── RESET BUTTON ── */
+    .reset-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,107,107,0.3);
+      background: rgba(255,107,107,0.08);
+      color: var(--warn);
+      font-family: var(--font);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.15s, border-color 0.2s;
+      letter-spacing: 0.02em;
+    }
+    .reset-btn:hover { background: rgba(255,107,107,0.18); border-color: rgba(255,107,107,0.5); transform: scale(1.02); }
+    .reset-btn:active { transform: scale(0.97); }
+    .reset-btn.loading { opacity: 0.6; pointer-events: none; }
+
+    /* ── CONFIRM MODAL ── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(6px);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    .modal-overlay.open { opacity: 1; pointer-events: all; }
+
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 28px 28px 24px;
+      max-width: 360px;
+      width: 90%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+      transform: scale(0.94);
+      transition: transform 0.2s;
+    }
+    .modal-overlay.open .modal { transform: scale(1); }
+
+    .modal-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      background: rgba(255,107,107,0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      margin-bottom: 16px;
+    }
+
+    .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+    .modal-desc  { font-size: 13px; color: var(--muted); line-height: 1.6; margin-bottom: 22px; }
+
+    .modal-actions { display: flex; gap: 10px; }
+
+    .btn-cancel {
+      flex: 1;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-cancel:hover { background: var(--faint); }
+
+    .btn-confirm {
+      flex: 1;
+      padding: 10px;
+      border-radius: 10px;
+      border: none;
+      background: var(--warn);
+      color: #fff;
+      font-family: var(--font);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.15s;
+    }
+    .btn-confirm:hover   { opacity: 0.88; }
+    .btn-confirm:active  { transform: scale(0.97); }
 
     /* LAYOUT */
-    .main {
-      max-width: 1280px;
-      margin: 0 auto;
-      padding: 28px 28px 48px;
-    }
+    .main { max-width: 1280px; margin: 0 auto; padding: 28px 28px 48px; }
 
     .section-label {
-      font-size: 10px;
-      font-weight: 600;
-      letter-spacing: 0.12em;
-      color: var(--muted);
-      text-transform: uppercase;
-      margin-bottom: 14px;
+      font-size: 10px; font-weight: 600; letter-spacing: 0.12em;
+      color: var(--muted); text-transform: uppercase; margin-bottom: 14px;
     }
 
     /* METRIC GRID */
@@ -143,13 +265,8 @@
       gap: 12px;
       margin-bottom: 28px;
     }
-
-    @media (max-width: 900px) {
-      .metrics-grid { grid-template-columns: repeat(3, 1fr); }
-    }
-    @media (max-width: 560px) {
-      .metrics-grid { grid-template-columns: repeat(2, 1fr); }
-    }
+    @media (max-width: 900px) { .metrics-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 560px) { .metrics-grid { grid-template-columns: repeat(2, 1fr); } }
 
     .metric-card {
       background: var(--surface);
@@ -158,278 +275,121 @@
       padding: 18px 16px 14px;
       position: relative;
       overflow: hidden;
-      transition: border-color 0.2s, transform 0.2s;
+      transition: border-color 0.2s, transform 0.2s, background 0.3s;
       cursor: default;
     }
+    .metric-card:hover { border-color: rgba(255,255,255,0.12); transform: translateY(-1px); }
+    [data-theme="light"] .metric-card:hover { border-color: rgba(0,0,0,0.15); }
 
-    .metric-card:hover {
-      border-color: rgba(255,255,255,0.12);
-      transform: translateY(-1px);
-    }
+    .metric-card.highlight { border-color: var(--border-glow); background: var(--surface); }
+    .metric-card.bill-card { border-color: rgba(255,212,59,0.2); }
 
-    .metric-card.highlight {
-      border-color: var(--border-glow);
-      background: linear-gradient(135deg, #111118, #12181f);
-    }
-
-    .metric-card.bill-card {
-      border-color: rgba(255,212,59,0.2);
-      background: linear-gradient(135deg, #111118, #181510);
-    }
-
-    .metric-icon {
-      font-size: 13px;
-      margin-bottom: 14px;
-      opacity: 0.6;
-    }
-
-    .metric-room {
-      font-size: 10px;
-      font-weight: 600;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin-bottom: 8px;
-    }
-
-    .metric-value {
-      font-family: var(--mono);
-      font-size: 22px;
-      font-weight: 500;
-      letter-spacing: -0.02em;
-      color: var(--text);
-      line-height: 1;
-      margin-bottom: 6px;
-    }
-
+    .metric-icon    { font-size: 13px; margin-bottom: 14px; opacity: 0.6; }
+    .metric-room    { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+    .metric-value   { font-family: var(--mono); font-size: 22px; font-weight: 500; letter-spacing: -0.02em; color: var(--text); line-height: 1; margin-bottom: 6px; }
     .metric-value.accent { color: var(--accent); }
-    .metric-value.bill { color: var(--accent3); }
+    .metric-value.bill   { color: var(--accent3); }
+    .metric-unit    { font-size: 10px; color: var(--muted); }
 
-    .metric-unit {
-      font-size: 10px;
-      color: var(--muted);
-    }
-
-    .metric-bar-track {
-      height: 3px;
-      background: var(--faint);
-      border-radius: 2px;
-      margin-top: 12px;
-      overflow: hidden;
-    }
-
-    .metric-bar-fill {
-      height: 100%;
-      border-radius: 2px;
-      background: var(--accent);
-      transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
+    .metric-bar-track { height: 3px; background: var(--faint); border-radius: 2px; margin-top: 12px; overflow: hidden; }
+    .metric-bar-fill  { height: 100%; border-radius: 2px; background: var(--accent); transition: width 0.8s cubic-bezier(0.4,0,0.2,1); }
     .metric-bar-fill.bill { background: var(--accent3); }
 
     /* MAIN CONTENT AREA */
-    .content-row {
-      display: grid;
-      grid-template-columns: 1fr 340px;
-      gap: 16px;
-      margin-bottom: 16px;
-    }
+    .content-row { display: grid; grid-template-columns: 1fr 340px; gap: 16px; margin-bottom: 16px; }
+    @media (max-width: 900px) { .content-row { grid-template-columns: 1fr; } }
 
-    @media (max-width: 900px) {
-      .content-row { grid-template-columns: 1fr; }
-    }
-
-    /* CHART CARD */
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 14px;
       padding: 20px 22px;
+      transition: background 0.3s, border-color 0.3s;
     }
 
-    .card-header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      margin-bottom: 18px;
-    }
+    .card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; }
+    .card-title  { font-size: 13px; font-weight: 600; color: var(--text); }
+    .card-sub    { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
-    .card-title {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text);
-    }
+    .badge { font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 20px; letter-spacing: 0.05em; text-transform: uppercase; }
+    .badge-blue   { background: rgba(79,168,255,0.15);  color: var(--accent); }
+    .badge-green  { background: rgba(99,230,190,0.12);  color: var(--accent2); }
+    .badge-yellow { background: rgba(255,212,59,0.12);  color: var(--accent3); }
+    .badge-red    { background: rgba(255,107,107,0.12); color: var(--warn); }
 
-    .card-sub {
-      font-size: 11px;
-      color: var(--muted);
-      margin-top: 2px;
-    }
-
-    .badge {
-      font-size: 10px;
-      font-weight: 600;
-      padding: 3px 8px;
-      border-radius: 20px;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-    }
-
-    .badge-blue { background: rgba(79,168,255,0.15); color: var(--accent); }
-    .badge-green { background: rgba(99,230,190,0.12); color: var(--accent2); }
-    .badge-yellow { background: rgba(255,212,59,0.12); color: var(--accent3); }
-    .badge-red { background: rgba(255,107,107,0.12); color: var(--warn); }
-
-    .chart-area {
-      position: relative;
-      height: 220px;
-    }
+    .chart-area { position: relative; height: 220px; }
 
     /* PREDICTION CARD */
-    .pred-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 0;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .pred-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .pred-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .pred-row:last-child  { border-bottom: none; padding-bottom: 0; }
     .pred-row:first-child { padding-top: 0; }
-
-    .pred-label {
-      font-size: 11px;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      font-weight: 600;
-    }
-
-    .pred-val {
-      font-family: var(--mono);
-      font-size: 16px;
-      font-weight: 500;
-      color: var(--text);
-    }
-
+    .pred-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+    .pred-val   { font-family: var(--mono); font-size: 16px; font-weight: 500; color: var(--text); }
     .pred-val.accent3 { color: var(--accent3); }
-    .pred-val.green { color: var(--accent2); }
+    .pred-val.green   { color: var(--accent2); }
 
-    /* SUGGESTION BANNER */
+    /* SUGGESTION */
     .suggestion {
       background: linear-gradient(135deg, rgba(79,168,255,0.06), rgba(99,230,190,0.06));
       border: 1px solid rgba(79,168,255,0.18);
-      border-radius: 12px;
-      padding: 14px 16px;
-      margin-top: 16px;
-      display: flex;
-      gap: 12px;
-      align-items: flex-start;
+      border-radius: 12px; padding: 14px 16px; margin-top: 16px;
+      display: flex; gap: 12px; align-items: flex-start;
     }
-
-    .suggestion-icon {
-      width: 28px;
-      height: 28px;
-      border-radius: 8px;
-      background: rgba(79,168,255,0.12);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      font-size: 13px;
-    }
-
-    .suggestion-text {
-      font-size: 12px;
-      color: var(--text);
-      line-height: 1.6;
-    }
-
-    .suggestion-title {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--accent);
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      margin-bottom: 3px;
-    }
+    .suggestion-icon { width: 28px; height: 28px; border-radius: 8px; background: rgba(79,168,255,0.12); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 13px; }
+    .suggestion-text  { font-size: 12px; color: var(--text); line-height: 1.6; }
+    .suggestion-title { font-size: 11px; font-weight: 600; color: var(--accent); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 3px; }
 
     /* ROOM BREAKDOWN */
-    .breakdown-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 10px 0;
-      border-bottom: 1px solid var(--border);
-    }
+    .breakdown-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
     .breakdown-row:last-child { border-bottom: none; }
+    .room-dot  { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .room-name { flex: 1; font-size: 12px; font-weight: 500; color: var(--text); }
+    .room-pct  { font-family: var(--mono); font-size: 11px; color: var(--muted); min-width: 32px; text-align: right; }
+    .room-bar-track { width: 80px; height: 4px; background: var(--faint); border-radius: 2px; overflow: hidden; }
+    .room-bar-fill  { height: 100%; border-radius: 2px; transition: width 0.8s cubic-bezier(0.4,0,0.2,1); }
 
-    .room-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
+    /* TREND */
+    .trend-chip { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 11px; padding: 3px 8px; border-radius: 20px; }
+    .trend-up     { background: rgba(255,107,107,0.12); color: var(--warn); }
+    .trend-down   { background: rgba(81,207,102,0.12);  color: var(--green); }
+    .trend-stable { background: rgba(255,212,59,0.12);  color: var(--accent3); }
 
-    .room-name {
-      flex: 1;
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--text);
-    }
-
-    .room-pct {
-      font-family: var(--mono);
-      font-size: 11px;
-      color: var(--muted);
-      min-width: 32px;
-      text-align: right;
-    }
-
-    .room-bar-track {
-      width: 80px;
-      height: 4px;
-      background: var(--faint);
-      border-radius: 2px;
-      overflow: hidden;
-    }
-
-    .room-bar-fill {
-      height: 100%;
-      border-radius: 2px;
-      transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
-    }
-
-    /* TREND INDICATOR */
-    .trend-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      font-family: var(--mono);
-      font-size: 11px;
-      padding: 3px 8px;
-      border-radius: 20px;
-    }
-
-    .trend-up { background: rgba(255,107,107,0.12); color: var(--warn); }
-    .trend-down { background: rgba(81,207,102,0.12); color: var(--green); }
-    .trend-stable { background: rgba(255,212,59,0.12); color: var(--accent3); }
-
-    /* LOADING SKELETON */
+    /* SKELETON */
     @keyframes shimmer {
-      0% { background-position: -400px 0; }
-      100% { background-position: 400px 0; }
+      0%   { background-position: -400px 0; }
+      100% { background-position:  400px 0; }
     }
-
     .skeleton {
       background: linear-gradient(90deg, var(--surface) 25%, var(--surface2) 50%, var(--surface) 75%);
       background-size: 800px 100%;
       animation: shimmer 1.5s infinite;
-      border-radius: 4px;
-      height: 18px;
+      border-radius: 4px; height: 18px;
     }
 
-    /* SCROLLBAR */
+    /* TOAST */
+    .toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 20px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      box-shadow: 0 8px 32px var(--shadow);
+      z-index: 2000;
+      transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+    .toast.success { border-color: rgba(81,207,102,0.3); }
+    .toast.error   { border-color: rgba(255,107,107,0.3); }
+
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--faint); border-radius: 2px; }
@@ -437,12 +397,28 @@
 </head>
 <body>
 
+<!-- CONFIRM MODAL -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-icon">🗑️</div>
+    <div class="modal-title">Reset All Data?</div>
+    <div class="modal-desc">This will permanently delete all energy readings and history from MongoDB. Dashboard values will reset to zero. This cannot be undone.</div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-confirm" onclick="confirmReset()">Yes, Reset</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
 <!-- TOP BAR -->
 <header class="topbar">
   <div class="logo">
     <div class="logo-icon">⚡</div>
     <div>
-      <div>Smart Energy Pro</div>
+      <div>IoT And AI Based Smart Plug Energy Usage Analysis and Prediction System</div>
       <div class="logo-sub">Home Energy Management</div>
     </div>
   </div>
@@ -453,12 +429,18 @@
     </div>
     <div class="device-badge">esp32_01</div>
     <div class="last-update" id="last-update">Refreshing...</div>
+    <!-- THEME TOGGLE -->
+    <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle dark/light mode">🌙</button>
+    <!-- RESET BUTTON -->
+    <button class="reset-btn" id="reset-btn" onclick="openModal()">
+      🗑️ Reset
+    </button>
   </div>
 </header>
 
 <main class="main">
 
-  <!-- SECTION: LIVE METRICS -->
+  <!-- LIVE METRICS -->
   <div class="section-label">Live Consumption</div>
   <div class="metrics-grid">
     <div class="metric-card">
@@ -505,10 +487,8 @@
     </div>
   </div>
 
-  <!-- CONTENT ROW: CHART + PREDICTION -->
+  <!-- CHART + PREDICTION -->
   <div class="content-row">
-
-    <!-- CHART -->
     <div class="card">
       <div class="card-header">
         <div>
@@ -522,7 +502,6 @@
       </div>
     </div>
 
-    <!-- PREDICTION -->
     <div class="card">
       <div class="card-header">
         <div>
@@ -531,7 +510,6 @@
         </div>
         <span class="badge badge-green">AI</span>
       </div>
-
       <div class="pred-row">
         <div class="pred-label">7-Day Bill</div>
         <div class="pred-val accent3">₹<span id="bill7">—</span></div>
@@ -548,7 +526,6 @@
         <div class="pred-label">High Usage</div>
         <div class="pred-val green" id="high">—</div>
       </div>
-
       <div class="suggestion">
         <div class="suggestion-icon">💡</div>
         <div>
@@ -557,7 +534,6 @@
         </div>
       </div>
     </div>
-
   </div>
 
   <!-- ROOM BREAKDOWN -->
@@ -575,7 +551,6 @@
         <div class="skeleton" style="width:60%"></div>
       </div>
     </div>
-
     <div class="card">
       <div class="card-header">
         <div>
@@ -592,23 +567,112 @@
 </main>
 
 <script>
-  const DEVICE_ID = "esp32_01";
-  const BASE      = `https://energy-server.onrender.com`;
-  const LIVE_API  = `${BASE}/get-energy/${DEVICE_ID}`;
-  const PRED_API  = `${BASE}/predict/${DEVICE_ID}`;
+  const DEVICE_ID  = "esp32_01";
+  const BASE       = "https://energy-server.onrender.com";
+  const LIVE_API   = `${BASE}/get-energy/${DEVICE_ID}`;
+  const PRED_API   = `${BASE}/predict/${DEVICE_ID}`;
+  const RESET_API  = `${BASE}/reset/${DEVICE_ID}`;
 
+  // ── Theme ─────────────────────────────────────────────────────────────────
+  const root = document.documentElement;
+  const themeBtn = document.getElementById('theme-btn');
+  let isDark = true;
 
+  function toggleTheme() {
+    isDark = !isDark;
+    root.setAttribute('data-theme', isDark ? 'dark' : 'light');
+    themeBtn.textContent = isDark ? '🌙' : '☀️';
+    // Update chart colors after theme switch
+    updateChartTheme();
+  }
 
-  // Client-side fallback bill calc (matches server slabs)
-   function calcBill(kwh) {
-  kwh = kwh || 0;
-  if (kwh <= 0) return 0;
-  if (kwh <= 100) return Math.round(kwh * 2.25 * 100) / 100;
-  if (kwh <= 400) return Math.round(((100 * 2.25) + (kwh - 100) * 4.45) * 100) / 100;
-  return Math.round(((100 * 2.25) + (300 * 4.45) + (kwh - 400) * 6.00) * 100) / 100;
-}
+  function updateChartTheme() {
+    if (!lineChart) return;
+    const gridColor  = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.06)';
+    const tickColor  = isDark ? '#7a7a90' : '#6b6b80';
+    const borderColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)';
+    lineChart.options.scales.x.grid.color = gridColor;
+    lineChart.options.scales.y.grid.color = gridColor;
+    lineChart.options.scales.x.ticks.color = tickColor;
+    lineChart.options.scales.y.ticks.color = tickColor;
+    lineChart.options.scales.x.border.color = borderColor;
+    lineChart.options.scales.y.border.color = borderColor;
+    lineChart.update();
+    donutChart.data.datasets[0].borderColor = isDark ? '#111118' : '#ffffff';
+    donutChart.update();
+  }
 
-  // ── Chart setup ──────────────────────────────────────────────────────────
+  // ── Modal ─────────────────────────────────────────────────────────────────
+  function openModal()  { document.getElementById('modal-overlay').classList.add('open'); }
+  function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
+
+  // Close modal on overlay click
+  document.getElementById('modal-overlay').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+  });
+
+  // ── Toast ─────────────────────────────────────────────────────────────────
+  function showToast(msg, type = 'success') {
+    const t = document.getElementById('toast');
+    t.textContent = (type === 'success' ? '✅ ' : '❌ ') + msg;
+    t.className = `toast ${type} show`;
+    setTimeout(() => { t.className = 'toast'; }, 3500);
+  }
+
+  // ── Reset ─────────────────────────────────────────────────────────────────
+  async function confirmReset() {
+    closeModal();
+    const btn = document.getElementById('reset-btn');
+    btn.classList.add('loading');
+    btn.textContent = '⏳ Resetting...';
+
+    try {
+      const res = await fetch(RESET_API, { method: 'DELETE' });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        // Zero out dashboard immediately
+        ['hall','room','bath','kitchen'].forEach(k => {
+          document.getElementById(k).textContent = '0.0000';
+          document.getElementById(`bar-${k}`).style.width = '0%';
+        });
+        document.getElementById('total').textContent = '0.0000';
+        document.getElementById('bill').textContent  = '0.00';
+        document.getElementById('bar-total').style.width = '0%';
+        document.getElementById('bar-bill').style.width  = '0%';
+        document.getElementById('bill7').textContent  = '0.00';
+        document.getElementById('bill30').textContent = '0.00';
+
+        // Clear chart data
+        lineChart.data.labels = [];
+        lineChart.data.datasets[0].data = [];
+        lineChart.update();
+        donutChart.data.datasets[0].data = [1, 1, 1, 1];
+        donutChart.update();
+
+        showToast('Data reset successfully!', 'success');
+      } else {
+        showToast('Reset failed. Try again.', 'error');
+      }
+    } catch (err) {
+      console.error('Reset error:', err);
+      showToast('Server unreachable.', 'error');
+    } finally {
+      btn.classList.remove('loading');
+      btn.innerHTML = '🗑️ Reset';
+    }
+  }
+
+  // ── Bill calc ─────────────────────────────────────────────────────────────
+  function calcBill(kwh) {
+    kwh = kwh || 0;
+    if (kwh <= 0) return 0;
+    if (kwh <= 100) return Math.round(kwh * 2.25 * 100) / 100;
+    if (kwh <= 400) return Math.round(((100 * 2.25) + (kwh - 100) * 4.45) * 100) / 100;
+    return Math.round(((100 * 2.25) + (300 * 4.45) + (kwh - 400) * 6.00) * 100) / 100;
+  }
+
+  // ── Charts ────────────────────────────────────────────────────────────────
   let lineChart, donutChart;
 
   function initCharts() {
@@ -616,7 +680,7 @@
     lineChart = new Chart(ctx, {
       type: 'line',
       data: { labels: [], datasets: [{
-        label: 'Total Energy (Wh)',
+        label: 'Total Energy',
         data: [],
         borderColor: '#4fa8ff',
         backgroundColor: (ctx) => {
@@ -670,7 +734,7 @@
     });
   }
 
-  // ── Render helpers ───────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
   const ROOM_DEFS = [
     { name: 'Hall',    key: 'hall',    color: '#4fa8ff' },
     { name: 'Room',    key: 'room',    color: '#63e6be' },
@@ -681,13 +745,13 @@
   function renderMetrics(vals, total, bill) {
     const maxRoom = Math.max(...Object.values(vals), 0.0001);
     ROOM_DEFS.forEach(r => {
-      document.getElementById(r.key).textContent           = vals[r.key].toFixed(4);
-      document.getElementById(`bar-${r.key}`).style.width  = Math.min(100, (vals[r.key] / maxRoom) * 100) + '%';
+      document.getElementById(r.key).textContent          = vals[r.key].toFixed(4);
+      document.getElementById(`bar-${r.key}`).style.width = Math.min(100, (vals[r.key] / maxRoom) * 100) + '%';
     });
-    document.getElementById('total').textContent          = total.toFixed(4);
-    document.getElementById('bill').textContent           = bill.toFixed(2);
-    document.getElementById('bar-total').style.width      = Math.min(100, (total / 10000) * 100) + '%';  // scale: 10 kWh max
-    document.getElementById('bar-bill').style.width       = Math.min(100, (bill / 2000) * 100) + '%';    // scale: ₹2000 max
+    document.getElementById('total').textContent         = total.toFixed(4);
+    document.getElementById('bill').textContent          = bill.toFixed(2);
+    document.getElementById('bar-total').style.width     = Math.min(100, (total / 10000) * 100) + '%';
+    document.getElementById('bar-bill').style.width      = Math.min(100, (bill / 2000) * 100) + '%';
   }
 
   function renderBreakdown(vals) {
@@ -705,37 +769,29 @@
     }).join('');
   }
 
-  // ── Dashboard loader ─────────────────────────────────────────────────────
+  // ── Data loaders ──────────────────────────────────────────────────────────
   async function loadDashboard() {
     const res = await fetch(LIVE_API);
-    if (!res.ok) throw new Error(`/get-energy returned HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const l = await res.json();
-    console.log('[get-energy]', l);
-
     if (!l || Object.keys(l).length === 0) {
       document.getElementById('last-update').textContent = 'No data yet — waiting for ESP32…';
       return;
     }
-
     const vals = {
       hall:    parseFloat(l.hall    || 0),
       room:    parseFloat(l.room    || 0),
       bath:    parseFloat(l.bath    || 0),
       kitchen: parseFloat(l.kitchen || 0),
     };
-    const total = parseFloat(l.total_energy || 0);
-
-    // Server field is "estimated_bill". Fall back to client-side calc if missing.
-    const bill = (l.estimated_bill != null)
-      ? parseFloat(l.estimated_bill)
-      : calcBill(total);
+    const total = parseFloat(l.total_energy  || 0);
+    const bill  = l.estimated_bill != null ? parseFloat(l.estimated_bill) : calcBill(total);
 
     renderMetrics(vals, total, bill);
     renderBreakdown(vals);
     document.getElementById('last-update').textContent = 'Updated ' + new Date().toLocaleTimeString();
 
-    // Push latest reading into the rolling line chart (max 30 points)
-    const label = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    const label = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     lineChart.data.labels.push(label);
     lineChart.data.datasets[0].data.push(total);
     if (lineChart.data.labels.length > 30) {
@@ -743,36 +799,28 @@
       lineChart.data.datasets[0].data.shift();
     }
     lineChart.update('none');
-
     donutChart.data.datasets[0].data = [vals.hall, vals.room, vals.bath, vals.kitchen];
     donutChart.update('none');
   }
 
-  // ── Prediction loader ────────────────────────────────────────────────────
   async function loadPrediction() {
     const res  = await fetch(PRED_API);
-    if (!res.ok) throw new Error(`/predict returned HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    console.log('[predict]', data);
-
     if (data.message || data.error) {
       document.getElementById('bill7').textContent      = '—';
       document.getElementById('bill30').textContent     = '—';
       document.getElementById('suggestion').textContent = data.message || data.error;
       return;
     }
-
-    // Server now sends: predicted_bill_7_days, predicted_bill_30_days,
-    //                   trend, high_usage_area, suggestion
-    document.getElementById('bill7').textContent  = parseFloat(data.predicted_bill_7_days  || 0).toFixed(2);
-    document.getElementById('bill30').textContent = parseFloat(data.predicted_bill_30_days || 0).toFixed(2);
-    document.getElementById('high').textContent      = data.high_usage_area || '—';
-    document.getElementById('suggestion').textContent = data.suggestion     || 'No suggestion available.';
+    document.getElementById('bill7').textContent       = parseFloat(data.predicted_bill_7_days  || 0).toFixed(2);
+    document.getElementById('bill30').textContent      = parseFloat(data.predicted_bill_30_days || 0).toFixed(2);
+    document.getElementById('high').textContent        = data.high_usage_area || '—';
+    document.getElementById('suggestion').textContent  = data.suggestion      || 'No suggestion available.';
 
     const trend = (data.trend || '').toLowerCase();
     const chip  = document.getElementById('trend-chip');
     const badge = document.getElementById('trend-badge');
-
     if (trend.includes('increas')) {
       chip.className = 'trend-chip trend-up';     chip.textContent  = '↑ Rising';
       badge.className = 'badge badge-red';        badge.textContent = 'Rising';
@@ -785,7 +833,6 @@
     }
   }
 
-  // ── Status dot helpers ───────────────────────────────────────────────────
   function showError(msg) {
     const dot = document.querySelector('.dot');
     if (dot) { dot.style.background = 'var(--warn)'; dot.style.boxShadow = '0 0 0 3px rgba(255,107,107,0.2)'; dot.style.animation = 'none'; }
@@ -796,7 +843,7 @@
     if (dot) { dot.style.background = ''; dot.style.boxShadow = ''; dot.style.animation = ''; }
   }
 
-  // ── Init & refresh loop ──────────────────────────────────────────────────
+  // ── Init ──────────────────────────────────────────────────────────────────
   initCharts();
 
   async function refresh() {
