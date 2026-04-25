@@ -1,6 +1,5 @@
 
-/*
-const express = require("express");
+/*const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 require("dotenv").config();
@@ -165,7 +164,6 @@ app.get("/dashboard/:id", async (req, res) => {
     res.status(500).json({ error: "Dashboard error" });
   }
 });
-*/
 /*
 
 // ─── GET /predict/:id ────────────────────────────────────────────────────────
@@ -433,6 +431,7 @@ app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
 
 */
 // ─── GET /predict/:id ────────────────────────────────────────────────────────
+
 /*
 app.get("/predict/:id", async (req, res) => {
   try {
@@ -525,7 +524,6 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
 
 */
-
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
@@ -535,112 +533,205 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-/* ================== MongoDB ================== */
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB Connected"))
   .catch(err => console.log(err));
 
-/* ================== Schemas ================== */
+function round4(val) { return Number(Number(val || 0).toFixed(4)); }
+function round2(val) { return Number(Number(val || 0).toFixed(2)); }
+
 const energySchema = new mongoose.Schema({
-  device_id: String,
-  total_energy: Number
+  device_id:    String,
+  // ── Cumulative (accumulated) ──
+  hall:         { type: Number, default: 0 },
+  room:         { type: Number, default: 0 },
+  bath:         { type: Number, default: 0 },
+  kitchen:      { type: Number, default: 0 },
+  total_energy: { type: Number, default: 0 },
+  // ✅ Live watts — OVERWRITTEN every POST, never accumulated
+  live_hall:    { type: Number, default: 0 },
+  live_room:    { type: Number, default: 0 },
+  live_bath:    { type: Number, default: 0 },
+  live_kitchen: { type: Number, default: 0 },
+  last_post:    { type: Date,   default: null },
+  createdAt:    { type: Date,   default: Date.now },
+  updatedAt:    { type: Date,   default: Date.now }
 });
+const Energy = mongoose.model("Energy", energySchema);
 
 const historySchema = new mongoose.Schema({
-  device_id: String,
-  hall: Number,
-  room: Number,
-  bath: Number,
-  kitchen: Number,
-  total_energy: Number,
-  timestamp: { type: Date, default: Date.now }
+  device_id:    String,
+  hall:         { type: Number, default: 0 },
+  room:         { type: Number, default: 0 },
+  bath:         { type: Number, default: 0 },
+  kitchen:      { type: Number, default: 0 },
+  total_energy: { type: Number, default: 0 },
+  timestamp:    { type: Date,   default: Date.now }
 });
-
-const Energy  = mongoose.model("Energy", energySchema);
 const History = mongoose.model("History", historySchema);
 
-/* ================== LIVE DATA STORE ================== */
-// 🔥 THIS is the key for real-time suggestions
-const liveData = {};
-
-/* ================== Helpers ================== */
-const round2 = (v) => Number(v.toFixed(2));
-const round4 = (v) => Number(v.toFixed(4));
-
-function calculateBill(units) {
-  if (units <= 100) return units * 1.5;
-  if (units <= 200) return 150 + (units - 100) * 2;
-  return 350 + (units - 200) * 3;
+// ─── BILL CALCULATION (TANGEDCO slabs) ───────────────────────────────────────
+function calculateBill(kwh) {
+  kwh = kwh || 0;
+  if (kwh <= 0) return 0;
+  let bill = 0;
+  if      (kwh <= 100) bill = kwh * 1.25;
+  else if (kwh <= 400) bill = (100 * 1.25) + (kwh - 100) * 2.5;
+  else                 bill = (100 * 1.25) + (300 * 2.5) + (kwh - 400) * 6.00;
+  return round2(bill);
 }
 
-/* ================== ESP32 POST ================== */
-app.post("/data", async (req, res) => {
+// ─── POST /update-energy ─────────────────────────────────────────────────────
+app.post("/update-energy", async (req, res) => {
+  console.log("📦 ESP32 sent:", req.body);
   try {
-    const { device_id, hall, room, bath, kitchen, total_energy } = req.body;
+    const { device_id, hall, room, bath, kitchen } = req.body;
 
-    // ✅ Store LIVE data (NO DB dependency)
-    liveData[device_id] = {
-      Hall: hall || 0,
-      Room: room || 0,
-      Bathroom: bath || 0,
-      Kitchen: kitchen || 0
-    };
+    let data = await Energy.findOne({ device_id });
+    if (!data) data = new Energy({ device_id });
 
-    // ✅ Save history (optional but useful)
+    const now = new Date();
+
+    // ── Cumulative (old logic — unchanged) ───────────────────────────────
+    data.hall    += (hall    || 0);
+    data.room    += (room    || 0);
+    data.bath    += (bath    || 0);
+    data.kitchen += (kitchen || 0);
+    data.total_energy = data.hall + data.room + data.bath + data.kitchen;
+
+    // ✅ Live watts — OVERWRITE with latest ESP32 reading every POST
+    data.live_hall    = (hall    || 0);
+    data.live_room    = (room    || 0);
+    data.live_bath    = (bath    || 0);
+    data.live_kitchen = (kitchen || 0);
+
+    data.last_post = now;
+    data.updatedAt = now;
+
+    await data.save();
+
     await History.create({
       device_id,
-      hall,
-      room,
-      bath,
-      kitchen,
-      total_energy
+      hall:         data.hall,
+      room:         data.room,
+      bath:         data.bath,
+      kitchen:      data.kitchen,
+      total_energy: data.total_energy
     });
 
-    // ✅ Update total energy
-    await Energy.findOneAndUpdate(
-      { device_id },
-      { total_energy },
-      { upsert: true }
-    );
-
-    res.json({ message: "✅ Data received" });
-
+    res.send("OK");
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Data error" });
+    res.status(500).send("Error");
   }
 });
 
-/* ================== PREDICTION ================== */
-app.get("/predict/:id", async (req, res) => {
+// ─── DELETE /reset/:id ───────────────────────────────────────────────────────
+app.delete("/reset/:id", async (req, res) => {
   try {
     const device_id = req.params.id;
 
-    const current = await Energy.findOne({ device_id });
+    await Energy.findOneAndUpdate(
+      { device_id },
+      {
+        hall: 0, room: 0, bath: 0, kitchen: 0,
+        total_energy: 0,
+        live_hall: 0, live_room: 0, live_bath: 0, live_kitchen: 0,
+        last_post: null,
+        updatedAt: new Date()
+      }
+    );
+
+    await History.deleteMany({ device_id });
+
+    console.log(`🗑️ Reset complete for device: ${device_id}`);
+    res.json({ success: true, message: "Data reset successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Reset failed" });
+  }
+});
+
+// ─── GET /get-energy/:id ─────────────────────────────────────────────────────
+app.get("/get-energy/:id", async (req, res) => {
+  try {
+    const data = await Energy.findOne({ device_id: req.params.id });
+    if (!data) return res.json({});
+
+    res.json({
+      hall:           round4(data.hall),
+      room:           round4(data.room),
+      bath:           round4(data.bath),
+      kitchen:        round4(data.kitchen),
+      total_energy:   round4(data.total_energy),
+      estimated_bill: calculateBill(data.total_energy)
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error fetching data" });
+  }
+});
+
+// ─── GET /dashboard/:id ──────────────────────────────────────────────────────
+app.get("/dashboard/:id", async (req, res) => {
+  try {
+    const device_id = req.params.id;
+    const current   = await Energy.findOne({ device_id });
+
+    const live = current ? {
+      hall:           round4(current.hall),
+      room:           round4(current.room),
+      bath:           round4(current.bath),
+      kitchen:        round4(current.kitchen),
+      total_energy:   round4(current.total_energy),
+      estimated_bill: calculateBill(current.total_energy)
+    } : null;
+
+    const history = await History.find({
+      device_id,
+      timestamp: { $gte: new Date(Date.now() - 30 * 60 * 1000) }
+    }).sort({ timestamp: 1 });
+
+    res.json({ live, history });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Dashboard error" });
+  }
+});
+
+// ─── GET /predict/:id ────────────────────────────────────────────────────────
+app.get("/predict/:id", async (req, res) => {
+  try {
+    const device_id = req.params.id;
+    const current   = await Energy.findOne({ device_id });
     if (!current) return res.json({ message: "No data found" });
 
     const totalEnergy = current.total_energy || 0;
 
-    /* 🔥 PURE LIVE DATA (NO DB) */
-    const liveAreas = liveData[device_id] || {
-      Hall: 0, Room: 0, Bathroom: 0, Kitchen: 0
+    // ✅ Live watts directly from Energy document (overwritten each POST)
+    //    This is pure ESP32 live data — no history, no accumulation
+    const liveAreas = {
+      Hall:     current.live_hall    || 0,
+      Room:     current.live_room    || 0,
+      Bathroom: current.live_bath    || 0,
+      Kitchen:  current.live_kitchen || 0
     };
 
+    // ✅ Find which area has highest live watts RIGHT NOW
     const maxArea = Object.entries(liveAreas).reduce(
-      (a, b) => b[1] > a[1] ? b : a,
-      ["Hall", 0]
+      (a, b) => b[1] > a[1] ? b : a, ["Hall", 0]
     )[0];
 
     const suggestions = {
-      Hall:     "Hall usage is highest right now. Turn off lights and fans when not in the Hall.",
-      Room:     "Room is consuming the most right now. Optimize AC and fan usage.",
-      Bathroom: "Bathroom is drawing high power right now. Reduce heater usage.",
-      Kitchen:  "Kitchen is using the most power right now. Limit heavy appliances."
+      Hall:     "Hall is drawing the most power right now. Turn off lights and fans when not in use.",
+      Room:     "Room is consuming the most right now. Optimise AC and fan schedules.",
+      Bathroom: "Bathroom is drawing high power right now. Cut down Heater run time.",
+      Kitchen:  "Kitchen is using the most power right now. Reduce Induction stove/Microwave usage."
     };
 
     const nearestMultipleOf5 = Math.floor(totalEnergy / 5) * 5;
 
-    /* ===== UNDER 5 kWh ===== */
+    // Under 5 kWh — bill = 0 but suggestion is always live
     if (nearestMultipleOf5 < 5) {
       return res.json({
         current_units:          round4(totalEnergy),
@@ -648,22 +739,20 @@ app.get("/predict/:id", async (req, res) => {
         predicted_bill_7_days:  0,
         predicted_bill_30_days: 0,
         trend:                  "Stable ➡️",
-        high_usage_area:        maxArea,              // 🔥 LIVE
-        suggestion:             suggestions[maxArea]  // 🔥 LIVE
+        high_usage_area:        maxArea,
+        suggestion:             suggestions[maxArea]
       });
     }
 
-    /* ===== ABOVE 5 kWh ===== */
-    const ratePerUnit = nearestMultipleOf5 >= 100 ? 2.5 : 1.25;
-    const dailyCost   = nearestMultipleOf5 * ratePerUnit;
-
+    // ── Above 5 kWh: full prediction ──────────────────────────────────────
+    const ratePerUnit            = nearestMultipleOf5 >= 100 ? 2.50 : 1.25;
+    const dailyCost              = nearestMultipleOf5 * ratePerUnit;
     const predicted_bill_7_days  = round2(dailyCost * 7);
     const predicted_bill_30_days = round2(dailyCost * 30);
+    const kwh7                   = round4(nearestMultipleOf5 * 7);
+    const kwh30                  = round4(nearestMultipleOf5 * 30);
 
-    const kwh7  = round4(nearestMultipleOf5 * 7);
-    const kwh30 = round4(nearestMultipleOf5 * 30);
-
-    /* ===== TREND (optional history use) ===== */
+    // ── Trend detection ───────────────────────────────────────────────────
     const recent = await History.find({
       device_id,
       timestamp: { $gte: new Date(Date.now() - 5 * 60 * 1000) }
@@ -671,11 +760,8 @@ app.get("/predict/:id", async (req, res) => {
 
     let trend = "Stable ➡️";
     if (recent.length >= 2) {
-      const deltaEnergy =
-        recent[recent.length - 1].total_energy -
-        recent[0].total_energy;
-
-      if (deltaEnergy > 0.01)      trend = "Increasing 📈";
+      const deltaEnergy = recent[recent.length - 1].total_energy - recent[0].total_energy;
+      if      (deltaEnergy > 0.01)  trend = "Increasing 📈";
       else if (deltaEnergy < -0.01) trend = "Decreasing 📉";
     }
 
@@ -689,8 +775,8 @@ app.get("/predict/:id", async (req, res) => {
       predicted_bill_30_days,
       rate_per_unit:           ratePerUnit,
       trend,
-      high_usage_area:         maxArea,              // 🔥 LIVE
-      suggestion:              suggestions[maxArea]  // 🔥 LIVE
+      high_usage_area:         maxArea,
+      suggestion:              suggestions[maxArea]
     });
 
   } catch (err) {
@@ -699,6 +785,5 @@ app.get("/predict/:id", async (req, res) => {
   }
 });
 
-/* ================== SERVER ================== */
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
